@@ -21,6 +21,29 @@ class MappingService {
 
   final http.Client _client;
 
+  Future<GeoPoint> reverseGeocode(GeoPoint point) async {
+    final uri = Uri.https('nominatim.openstreetmap.org', '/reverse', {
+      'lat': '${point.latitude}',
+      'lon': '${point.longitude}',
+      'format': 'jsonv2',
+      'zoom': '18',
+      'addressdetails': '1',
+    });
+    final response = await _client.get(uri, headers: const {
+      'User-Agent': 'RequestRide/0.1 (ride-hailing test application)',
+      'Accept-Language': 'en-ZA,en',
+    }).timeout(const Duration(seconds: 15));
+    if (response.statusCode != 200) {
+      return point;
+    }
+    final value = jsonDecode(response.body) as Map<String, dynamic>;
+    return GeoPoint(
+      point.latitude,
+      point.longitude,
+      label: value['display_name'] as String?,
+    );
+  }
+
   Future<List<GeoPoint>> searchAddress(String query) async {
     final text = query.trim();
     if (text.length < 3) return const [];
