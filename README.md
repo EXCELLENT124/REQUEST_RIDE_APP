@@ -46,7 +46,7 @@ Add `io.supabase.flutter://reset-callback/` to Supabase Authentication → URL C
 
 Every push to `main` runs `.github/workflows/build-all-platforms.yml`. It checks
 the project and creates downloadable GitHub Actions artifacts for Android APK,
-Google Play App Bundle, web, Windows, and unsigned iPhone/iPad builds.
+Google Play App Bundle, web, Windows, and an unsigned iPhone/iPad IPA.
 
 Open the repository's **Actions** tab, choose a successful **Build Request
 Ride** run, and download the files from **Artifacts**. The iOS artifact verifies
