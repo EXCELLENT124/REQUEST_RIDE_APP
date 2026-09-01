@@ -41,3 +41,14 @@ Add `io.supabase.flutter://reset-callback/` to Supabase Authentication → URL C
 - Arrange a staffed safety escalation process and emergency-service guidance; the in-app SOS currently alerts administrators and provides 112 calling.
 - Obtain legal review of the testing privacy/terms drafts, define POPIA retention periods, and process deletion requests using a protected server-side worker.
 - Configure custom SMTP, production Auth redirect/deep links, crash reporting, uptime alerts, backups, Android/iOS signing, and store disclosures before launch.
+
+## GitHub cloud builds
+
+Every push to `main` runs `.github/workflows/build-all-platforms.yml`. It checks
+the project and creates downloadable GitHub Actions artifacts for Android APK,
+Google Play App Bundle, web, Windows, and unsigned iPhone/iPad builds.
+
+Open the repository's **Actions** tab, choose a successful **Build Request
+Ride** run, and download the files from **Artifacts**. The iOS artifact verifies
+that the app builds; installation and App Store submission still require an
+Apple Developer signing certificate and provisioning profile.
