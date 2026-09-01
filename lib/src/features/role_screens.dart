@@ -1221,8 +1221,18 @@ class _DriverWorkspaceState extends State<DriverWorkspace> {
 
   Future<void> accept(Ride ride) async {
     try {
+      final point = await _currentPoint();
       await widget.backend.acceptRide(ride.id);
-      if (mounted) _message(context, 'Ride accepted');
+      await widget.backend.updateDriverLocation(point, rideId: ride.id);
+      await widget.backend.transitionRide(
+        ride.id,
+        RideStatus.driverArriving,
+      );
+      activeRideId = ride.id;
+      lastLocation = point;
+      if (mounted) {
+        _message(context, 'Ride accepted — follow the route to the customer');
+      }
     } catch (error) {
       if (mounted) _message(context, error);
     }
@@ -1320,16 +1330,10 @@ class _DriverWorkspaceState extends State<DriverWorkspace> {
             stream: widget.backend.availableRideRequestsStream(),
             builder: (context, snapshot) => Column(
               children: (snapshot.data ?? [])
-                  .map((ride) => Card(
-                        child: ListTile(
-                          title: Text(ride.destination.label ?? 'Ride request'),
-                          subtitle: Text(
-                              'Estimated R${ride.estimatedFare?.toStringAsFixed(2)}'),
-                          trailing: FilledButton(
-                            onPressed: online ? () => accept(ride) : null,
-                            child: const Text('Accept'),
-                          ),
-                        ),
+                  .map((ride) => _DriverRequestCard(
+                        ride: ride,
+                        enabled: online,
+                        onAccept: () => accept(ride),
                       ))
                   .toList(),
             ),
@@ -1393,6 +1397,59 @@ class _NotificationInbox extends StatelessWidget {
       );
 }
 
+class _DriverRequestCard extends StatelessWidget {
+  const _DriverRequestCard({
+    required this.ride,
+    required this.enabled,
+    required this.onAccept,
+  });
+
+  final Ride ride;
+  final bool enabled;
+  final VoidCallback onAccept;
+
+  @override
+  Widget build(BuildContext context) => Card(
+        clipBehavior: Clip.antiAlias,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            ListTile(
+              leading: const CircleAvatar(child: Icon(Icons.person_pin_circle)),
+              title: Text(ride.pickup.label ?? 'Customer pickup'),
+              subtitle: Text(
+                'To ${ride.destination.label ?? 'selected destination'}',
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+              ),
+              trailing: Text(
+                'R${(ride.estimatedFare ?? 0).toStringAsFixed(2)}',
+                style: Theme.of(context).textTheme.titleMedium,
+              ),
+            ),
+            _RideRouteMap(
+              start: ride.pickup,
+              target: ride.destination,
+              startIcon: Icons.person_pin_circle,
+              startColor: const Color(0xFFFFC857),
+              targetIcon: Icons.flag_circle,
+              targetColor: const Color(0xFFFF5E5B),
+            ),
+            Padding(
+              padding: const EdgeInsets.all(14),
+              child: FilledButton.icon(
+                onPressed: enabled ? onAccept : null,
+                icon: const Icon(Icons.check_circle),
+                label: Text(enabled
+                    ? 'Accept and navigate to customer'
+                    : 'Go online to accept'),
+              ),
+            ),
+          ],
+        ),
+      );
+}
+
 class _DriverRideCard extends StatelessWidget {
   const _DriverRideCard({required this.backend, required this.ride});
   final Backend backend;
@@ -1407,77 +1464,256 @@ class _DriverRideCard extends StatelessWidget {
       };
 
   @override
-  Widget build(BuildContext context) => Card(
-        child: Padding(
-          padding: const EdgeInsets.all(12),
-          child: Column(
-            children: [
-              ListTile(
-                leading: const Icon(Icons.local_taxi),
-                title: Text(ride.destination.label ?? 'Trip'),
-                subtitle: Text(_rideStatusLabel(ride.status)),
-                trailing: Text(
-                  'R${(ride.finalFare ?? ride.estimatedFare ?? 0).toStringAsFixed(2)}',
-                ),
-              ),
-              Wrap(
-                spacing: 8,
-                children: [
-                  OutlinedButton.icon(
-                    onPressed: () => _showTripDetails(context, backend, ride),
-                    icon: const Icon(Icons.receipt_long),
-                    label: const Text('Details'),
+  Widget build(BuildContext context) => StreamBuilder<Map<String, dynamic>?>(
+        stream: backend.trackRide(ride.id),
+        builder: (context, snapshot) {
+          final tracking = snapshot.data;
+          final driver = tracking == null
+              ? null
+              : GeoPoint(
+                  (tracking['latitude'] as num).toDouble(),
+                  (tracking['longitude'] as num).toDouble(),
+                );
+          final travellingToDestination = ride.status == RideStatus.inProgress;
+          final target =
+              travellingToDestination ? ride.destination : ride.pickup;
+          return Card(
+            clipBehavior: Clip.antiAlias,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                ListTile(
+                  leading: const Icon(Icons.local_taxi),
+                  title: Text(travellingToDestination
+                      ? 'Driving customer to destination'
+                      : 'Driving to customer pickup'),
+                  subtitle: Text(
+                    travellingToDestination
+                        ? (ride.destination.label ?? 'Selected destination')
+                        : (ride.pickup.label ?? 'Customer pickup point'),
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
                   ),
-                  if (next != null)
-                    FilledButton.tonal(
-                      onPressed: () async {
-                        try {
-                          final point = await _currentPoint();
-                          await backend.updateDriverLocation(point,
-                              rideId: ride.id);
-                          await backend.transitionRide(ride.id, next!);
-                        } catch (error) {
-                          if (context.mounted) _message(context, error);
-                        }
-                      },
-                      child: Text(_nextStatusLabel(next!)),
-                    ),
-                  if (ride.status == RideStatus.accepted ||
-                      ride.status == RideStatus.driverArriving ||
-                      ride.status == RideStatus.driverArrived)
-                    TextButton.icon(
-                      onPressed: () =>
-                          _cancelRideDialog(context, backend, ride),
-                      icon: const Icon(Icons.cancel_outlined),
-                      label: const Text('Cancel'),
-                    ),
-                  if (ride.status == RideStatus.completed)
-                    FilledButton.tonalIcon(
-                      onPressed: () => _rateRideDialog(context, backend, ride),
-                      icon: const Icon(Icons.star),
-                      label: const Text('Rate customer'),
-                    ),
-                  if (_isLiveRide(ride.status))
-                    OutlinedButton.icon(
-                      onPressed: () => _safetyDialog(context, backend, ride),
-                      icon: const Icon(Icons.shield_outlined),
-                      label: const Text('Safety'),
-                    ),
-                ],
-              ),
-            ],
-          ),
-        ),
+                  trailing: Text(
+                    'R${(ride.finalFare ?? ride.estimatedFare ?? 0).toStringAsFixed(2)}',
+                  ),
+                ),
+                if (_isLiveRide(ride.status))
+                  _RideRouteMap(
+                    start: driver,
+                    target: target,
+                    startIcon: Icons.local_taxi,
+                    startColor: const Color(0xFF00D69A),
+                    targetIcon: travellingToDestination
+                        ? Icons.flag_circle
+                        : Icons.person_pin_circle,
+                    targetColor: travellingToDestination
+                        ? const Color(0xFFFF5E5B)
+                        : const Color(0xFFFFC857),
+                    waitingMessage:
+                        'Getting your location to build the road route…',
+                  ),
+                Padding(
+                  padding: const EdgeInsets.all(12),
+                  child: Wrap(
+                    spacing: 8,
+                    runSpacing: 8,
+                    children: [
+                      OutlinedButton.icon(
+                        onPressed: () =>
+                            _showTripDetails(context, backend, ride),
+                        icon: const Icon(Icons.receipt_long),
+                        label: const Text('Details'),
+                      ),
+                      if (next != null)
+                        FilledButton.icon(
+                          onPressed: () async {
+                            try {
+                              final point = await _currentPoint();
+                              await backend.updateDriverLocation(point,
+                                  rideId: ride.id);
+                              await backend.transitionRide(ride.id, next!);
+                            } catch (error) {
+                              if (context.mounted) _message(context, error);
+                            }
+                          },
+                          icon: Icon(_nextStatusIcon(next!)),
+                          label: Text(_nextStatusLabel(next!)),
+                        ),
+                      if (ride.status == RideStatus.accepted ||
+                          ride.status == RideStatus.driverArriving ||
+                          ride.status == RideStatus.driverArrived)
+                        TextButton.icon(
+                          onPressed: () =>
+                              _cancelRideDialog(context, backend, ride),
+                          icon: const Icon(Icons.cancel_outlined),
+                          label: const Text('Cancel'),
+                        ),
+                      if (ride.status == RideStatus.completed)
+                        FilledButton.tonalIcon(
+                          onPressed: () =>
+                              _rateRideDialog(context, backend, ride),
+                          icon: const Icon(Icons.star),
+                          label: const Text('Rate customer'),
+                        ),
+                      if (_isLiveRide(ride.status))
+                        OutlinedButton.icon(
+                          onPressed: () =>
+                              _safetyDialog(context, backend, ride),
+                          icon: const Icon(Icons.shield_outlined),
+                          label: const Text('Safety'),
+                        ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          );
+        },
       );
 }
 
 String _nextStatusLabel(RideStatus status) => switch (status) {
       RideStatus.driverArriving => 'Navigate to pickup',
       RideStatus.driverArrived => 'Mark arrived',
-      RideStatus.inProgress => 'Start trip',
+      RideStatus.inProgress => 'Customer collected',
       RideStatus.completed => 'Complete trip',
       _ => status.name,
     };
+
+IconData _nextStatusIcon(RideStatus status) => switch (status) {
+      RideStatus.driverArriving => Icons.navigation,
+      RideStatus.driverArrived => Icons.location_on,
+      RideStatus.inProgress => Icons.airline_seat_recline_normal,
+      RideStatus.completed => Icons.flag,
+      _ => Icons.arrow_forward,
+    };
+
+class _RideRouteMap extends StatelessWidget {
+  const _RideRouteMap({
+    required this.start,
+    required this.target,
+    required this.startIcon,
+    required this.startColor,
+    required this.targetIcon,
+    required this.targetColor,
+    this.waitingMessage,
+  });
+
+  final GeoPoint? start;
+  final GeoPoint target;
+  final IconData startIcon;
+  final Color startColor;
+  final IconData targetIcon;
+  final Color targetColor;
+  final String? waitingMessage;
+
+  @override
+  Widget build(BuildContext context) {
+    final origin = start;
+    if (origin == null) {
+      return SizedBox(
+        height: 220,
+        child: Center(
+          child: Text(waitingMessage ?? 'Waiting for the starting location…'),
+        ),
+      );
+    }
+    final directDistance = _distanceKm(origin, target);
+    final centre = GeoPoint(
+      (origin.latitude + target.latitude) / 2,
+      (origin.longitude + target.longitude) / 2,
+    );
+    return FutureBuilder<RouteResult>(
+      future: MappingService().route(origin, target),
+      builder: (context, snapshot) {
+        final route = snapshot.data;
+        final points = route?.points ?? [origin, target];
+        final distance = route?.distanceKm ?? directDistance;
+        final eta = route?.durationMinutes ??
+            math.max(1, (directDistance / 30 * 60).round());
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            SizedBox(
+              height: 300,
+              child: FlutterMap(
+                key: ValueKey(
+                  '${origin.latitude}-${origin.longitude}-${target.latitude}-${target.longitude}',
+                ),
+                options: MapOptions(
+                  initialCenter: map.LatLng(
+                    centre.latitude,
+                    centre.longitude,
+                  ),
+                  initialZoom: _trackingZoom(directDistance),
+                ),
+                children: [
+                  TileLayer(
+                    urlTemplate:
+                        'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+                    userAgentPackageName: 'za.co.requestride.request_ride',
+                  ),
+                  PolylineLayer(
+                    polylines: [
+                      Polyline(
+                        points: points
+                            .map((point) => map.LatLng(
+                                  point.latitude,
+                                  point.longitude,
+                                ))
+                            .toList(),
+                        strokeWidth: 6,
+                        color: const Color(0xFF00D69A),
+                      ),
+                    ],
+                  ),
+                  MarkerLayer(
+                    markers: [
+                      Marker(
+                        point: map.LatLng(
+                          origin.latitude,
+                          origin.longitude,
+                        ),
+                        child: Icon(startIcon, color: startColor, size: 42),
+                      ),
+                      Marker(
+                        point: map.LatLng(
+                          target.latitude,
+                          target.longitude,
+                        ),
+                        child: Icon(targetIcon, color: targetColor, size: 42),
+                      ),
+                    ],
+                  ),
+                  const RichAttributionWidget(
+                    attributions: [
+                      TextSourceAttribution('OpenStreetMap contributors'),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(14, 10, 14, 4),
+              child: Text(
+                '${distance.toStringAsFixed(1)} km by road · about $eta min',
+                style: Theme.of(context).textTheme.titleSmall,
+              ),
+            ),
+            if (snapshot.hasError)
+              const Padding(
+                padding: EdgeInsets.symmetric(horizontal: 14),
+                child: Text(
+                  'Showing a direct line while road directions reconnect.',
+                ),
+              ),
+          ],
+        );
+      },
+    );
+  }
+}
 
 class _TripSummaryCard extends StatelessWidget {
   const _TripSummaryCard({required this.backend, required this.ride});
