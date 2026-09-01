@@ -820,136 +820,161 @@ class _CustomerLiveRideCard extends StatelessWidget {
                   (driver.longitude + target.longitude) / 2,
                 );
 
-          return Card(
-            clipBehavior: Clip.antiAlias,
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                ListTile(
-                  leading: const CircleAvatar(child: Icon(Icons.local_taxi)),
-                  title: Text(_rideStatusLabel(ride.status)),
-                  subtitle: Text(driver == null
-                      ? 'Waiting for the driver\'s first location update…'
-                      : '${distanceToTarget!.toStringAsFixed(1)} km away · about $etaMinutes min'),
-                  trailing: Text(ride.estimatedFare == null
-                      ? ''
-                      : 'R${ride.estimatedFare!.toStringAsFixed(2)}'),
-                ),
-                SizedBox(
-                  height: 300,
-                  child: FlutterMap(
-                    key: ValueKey(
-                      '${ride.id}-${driver?.latitude}-${driver?.longitude}',
+          return FutureBuilder(
+            future:
+                driver == null ? null : MappingService().route(driver, target),
+            builder: (context, routeSnapshot) {
+              final roadRoute = routeSnapshot.data;
+              final shownDistance = roadRoute?.distanceKm ?? distanceToTarget;
+              final shownEta = roadRoute?.durationMinutes ?? etaMinutes;
+              return Card(
+                clipBehavior: Clip.antiAlias,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    ListTile(
+                      leading:
+                          const CircleAvatar(child: Icon(Icons.local_taxi)),
+                      title: Text(_rideStatusLabel(ride.status)),
+                      subtitle: Text(driver == null
+                          ? 'Waiting for the driver\'s first location update…'
+                          : '${shownDistance!.toStringAsFixed(1)} km by road · about $shownEta min'),
+                      trailing: Text(ride.estimatedFare == null
+                          ? ''
+                          : 'R${ride.estimatedFare!.toStringAsFixed(2)}'),
                     ),
-                    options: MapOptions(
-                      initialCenter: map.LatLng(
-                        centre.latitude,
-                        centre.longitude,
-                      ),
-                      initialZoom: _trackingZoom(distanceToTarget),
-                    ),
-                    children: [
-                      TileLayer(
-                        urlTemplate:
-                            'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
-                        userAgentPackageName: 'za.co.requestride.request_ride',
-                      ),
-                      if (driver != null)
-                        PolylineLayer(
-                          polylines: [
-                            Polyline(
-                              points: [
-                                map.LatLng(driver.latitude, driver.longitude),
-                                map.LatLng(target.latitude, target.longitude),
-                              ],
-                              strokeWidth: 5,
-                              color: const Color(0xFF00D69A),
-                            ),
-                          ],
+                    SizedBox(
+                      height: 300,
+                      child: FlutterMap(
+                        key: ValueKey(
+                          '${ride.id}-${driver?.latitude}-${driver?.longitude}',
                         ),
-                      MarkerLayer(
-                        markers: [
-                          Marker(
-                            point: map.LatLng(
-                              ride.pickup.latitude,
-                              ride.pickup.longitude,
-                            ),
-                            child: const Icon(
-                              Icons.person_pin_circle,
-                              color: Color(0xFFFFC857),
-                              size: 42,
-                            ),
+                        options: MapOptions(
+                          initialCenter: map.LatLng(
+                            centre.latitude,
+                            centre.longitude,
                           ),
-                          Marker(
-                            point: map.LatLng(
-                              ride.destination.latitude,
-                              ride.destination.longitude,
-                            ),
-                            child: const Icon(
-                              Icons.flag_circle,
-                              color: Color(0xFFFF5E5B),
-                              size: 40,
-                            ),
+                          initialZoom: _trackingZoom(distanceToTarget),
+                        ),
+                        children: [
+                          TileLayer(
+                            urlTemplate:
+                                'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+                            userAgentPackageName:
+                                'za.co.requestride.request_ride',
                           ),
                           if (driver != null)
-                            Marker(
-                              point: map.LatLng(
-                                driver.latitude,
-                                driver.longitude,
-                              ),
-                              child: const DecoratedBox(
-                                decoration: BoxDecoration(
-                                  color: Color(0xFF031B1A),
-                                  shape: BoxShape.circle,
+                            PolylineLayer(
+                              polylines: [
+                                Polyline(
+                                  points: roadRoute?.points
+                                          .map((point) => map.LatLng(
+                                                point.latitude,
+                                                point.longitude,
+                                              ))
+                                          .toList() ??
+                                      [
+                                        map.LatLng(
+                                          driver.latitude,
+                                          driver.longitude,
+                                        ),
+                                        map.LatLng(
+                                          target.latitude,
+                                          target.longitude,
+                                        ),
+                                      ],
+                                  strokeWidth: 5,
+                                  color: const Color(0xFF00D69A),
                                 ),
-                                child: Padding(
-                                  padding: EdgeInsets.all(7),
-                                  child: Icon(
-                                    Icons.local_taxi,
-                                    color: Color(0xFF00D69A),
-                                    size: 30,
+                              ],
+                            ),
+                          MarkerLayer(
+                            markers: [
+                              Marker(
+                                point: map.LatLng(
+                                  ride.pickup.latitude,
+                                  ride.pickup.longitude,
+                                ),
+                                child: const Icon(
+                                  Icons.person_pin_circle,
+                                  color: Color(0xFFFFC857),
+                                  size: 42,
+                                ),
+                              ),
+                              Marker(
+                                point: map.LatLng(
+                                  ride.destination.latitude,
+                                  ride.destination.longitude,
+                                ),
+                                child: const Icon(
+                                  Icons.flag_circle,
+                                  color: Color(0xFFFF5E5B),
+                                  size: 40,
+                                ),
+                              ),
+                              if (driver != null)
+                                Marker(
+                                  point: map.LatLng(
+                                    driver.latitude,
+                                    driver.longitude,
+                                  ),
+                                  child: const DecoratedBox(
+                                    decoration: BoxDecoration(
+                                      color: Color(0xFF031B1A),
+                                      shape: BoxShape.circle,
+                                    ),
+                                    child: Padding(
+                                      padding: EdgeInsets.all(7),
+                                      child: Icon(
+                                        Icons.local_taxi,
+                                        color: Color(0xFF00D69A),
+                                        size: 30,
+                                      ),
+                                    ),
                                   ),
                                 ),
-                              ),
+                            ],
+                          ),
+                          const RichAttributionWidget(
+                            attributions: [
+                              TextSourceAttribution(
+                                  'OpenStreetMap contributors'),
+                            ],
+                          ),
+                        ],
+                      ),
+                    ),
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
+                      child: Row(
+                        children: [
+                          const Icon(Icons.sync, size: 18),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Text(driver == null
+                                ? 'Live tracking will begin automatically.'
+                                : 'Driver location updates automatically.'),
+                          ),
+                          if (ride.status != RideStatus.inProgress)
+                            TextButton.icon(
+                              onPressed: () =>
+                                  _cancelRideDialog(context, backend, ride),
+                              icon: const Icon(Icons.cancel_outlined),
+                              label: const Text('Cancel'),
                             ),
+                          IconButton(
+                            tooltip: 'Trip safety',
+                            onPressed: () =>
+                                _safetyDialog(context, backend, ride),
+                            icon: const Icon(Icons.shield_outlined),
+                          ),
                         ],
                       ),
-                      const RichAttributionWidget(
-                        attributions: [
-                          TextSourceAttribution('OpenStreetMap contributors'),
-                        ],
-                      ),
-                    ],
-                  ),
+                    ),
+                  ],
                 ),
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
-                  child: Row(
-                    children: [
-                      const Icon(Icons.sync, size: 18),
-                      const SizedBox(width: 8),
-                      Expanded(
-                        child: Text(driver == null
-                            ? 'Live tracking will begin automatically.'
-                            : 'Driver location updates automatically.'),
-                      ),
-                      if (ride.status != RideStatus.inProgress)
-                        TextButton.icon(
-                          onPressed: () =>
-                              _cancelRideDialog(context, backend, ride),
-                          icon: const Icon(Icons.cancel_outlined),
-                          label: const Text('Cancel'),
-                        ),
-                      IconButton(
-                        tooltip: 'Trip safety',
-                        onPressed: () => _safetyDialog(context, backend, ride),
-                        icon: const Icon(Icons.shield_outlined),
-                      ),
-                    ],
-                  ),
-                ),
-              ],
-            ),
+              );
+            },
           );
         },
       );
