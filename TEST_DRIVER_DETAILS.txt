@@ -1,0 +1,31 @@
+REQUEST RIDE - FICTIONAL DRIVER TEST DETAILS
+============================================
+
+Use these values only for testing the Request Ride application.
+
+Driver account
+Full name: Mpho Test Mdluli
+Email: Use a test email address that you control
+Role: Driver
+
+Driver application
+Vehicle make: Toyota
+Vehicle model: Corolla Quest 1.8
+Year: 2022
+Colour: Midnight Blue
+Number plate: TEST GP 123
+Residential address: 24 Demo Avenue, Midrand, Gauteng, 1685
+
+Upload mapping
+Driver licence: 01_driver_licence_TEST_ONLY.pdf
+Professional driving permit: 02_professional_driving_permit_TEST_ONLY.pdf
+Vehicle registration: 03_vehicle_registration_TEST_ONLY.pdf
+Roadworthy certificate: 04_roadworthy_certificate_TEST_ONLY.pdf
+Vehicle insurance: 05_vehicle_insurance_TEST_ONLY.pdf
+Proof of address: 06_proof_of_address_TEST_ONLY.pdf
+Identity document: 07_identity_document_TEST_ONLY.pdf
+
+Important
+All supplied documents contain fictional information and are visibly marked
+TEST ONLY - NOT VALID. They are intended only for upload and approval-flow tests.
+Do not use real identity documents during early development testing.

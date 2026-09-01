@@ -1,0 +1,21 @@
+.dart_tool/
+.flutter-plugins*
+.packages
+build/
+.env
+config/local.json
+android/local.properties
+ios/Flutter/ephemeral/
+windows/flutter/ephemeral/
+
+# IDE and local workspace state
+.idea/
+*.iml
+.tool-state/
+tmp/
+AGENTS.md
+sources/
+
+# Platform-generated files
+ios/Flutter/Generated.xcconfig
+ios/Flutter/flutter_export_environment.sh
