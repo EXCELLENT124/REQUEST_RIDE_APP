@@ -185,6 +185,8 @@ class CustomerWorkspace extends StatefulWidget {
 
 class _CustomerWorkspaceState extends State<CustomerWorkspace> {
   final mapping = MappingService();
+  final mapController = MapController();
+  final pickupAddress = TextEditingController();
   final destinationAddress = TextEditingController();
   final destinationLat = TextEditingController(text: '-26.1076');
   final destinationLng = TextEditingController(text: '28.0567');
@@ -199,12 +201,21 @@ class _CustomerWorkspaceState extends State<CustomerWorkspace> {
   Timer? driverRefresh;
   List<GeoPoint> routePoints = const [];
   List<GeoPoint> addressResults = const [];
+  List<GeoPoint> pickupAddressResults = const [];
   var searchingAddress = false;
+  var searchingPickupAddress = false;
   String paymentMethod = 'cash';
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) => locate());
+  }
 
   @override
   void dispose() {
     driverRefresh?.cancel();
+    pickupAddress.dispose();
     destinationAddress.dispose();
     destinationLat.dispose();
     destinationLng.dispose();
@@ -240,8 +251,15 @@ class _CustomerWorkspaceState extends State<CustomerWorkspace> {
 
   Future<void> locate() async {
     try {
-      final point = await _currentPoint();
-      setState(() => pickup = point);
+      final rawPoint = await _currentPoint();
+      final point = await mapping.reverseGeocode(rawPoint);
+      if (!mounted) return;
+      setState(() {
+        pickup = point;
+        pickupAddress.text = point.label ?? 'My current location';
+        pickupAddressResults = const [];
+      });
+      mapController.move(map.LatLng(point.latitude, point.longitude), 15);
       startDriverRefresh();
       await loadOnlineDrivers();
     } catch (error) {
@@ -249,14 +267,45 @@ class _CustomerWorkspaceState extends State<CustomerWorkspace> {
     }
   }
 
-  void chooseDestination(map.LatLng point) {
+  Future<void> chooseDestination(map.LatLng point) async {
+    final selected = await mapping.reverseGeocode(
+      GeoPoint(point.latitude, point.longitude),
+    );
+    if (!mounted) return;
     setState(() {
-      destinationLat.text = point.latitude.toStringAsFixed(6);
-      destinationLng.text = point.longitude.toStringAsFixed(6);
+      destinationAddress.text = selected.label ?? 'Selected map location';
+      destinationLat.text = selected.latitude.toStringAsFixed(6);
+      destinationLng.text = selected.longitude.toStringAsFixed(6);
       estimate = null;
       routePoints = const [];
       addressResults = const [];
     });
+  }
+
+  Future<void> searchPickup() async {
+    if (pickupAddress.text.trim().length < 3) return;
+    setState(() => searchingPickupAddress = true);
+    try {
+      final results = await mapping.searchAddress(pickupAddress.text);
+      if (mounted) setState(() => pickupAddressResults = results);
+    } catch (error) {
+      if (mounted) _message(context, error);
+    } finally {
+      if (mounted) setState(() => searchingPickupAddress = false);
+    }
+  }
+
+  void selectPickupAddress(GeoPoint result) {
+    setState(() {
+      pickup = result;
+      pickupAddress.text = result.label ?? 'Selected pickup';
+      pickupAddressResults = const [];
+      estimate = null;
+      routePoints = const [];
+    });
+    mapController.move(map.LatLng(result.latitude, result.longitude), 15);
+    startDriverRefresh();
+    loadOnlineDrivers();
   }
 
   Future<void> searchDestination() async {
@@ -284,6 +333,7 @@ class _CustomerWorkspaceState extends State<CustomerWorkspace> {
       estimate = null;
       routePoints = const [];
     });
+    mapController.move(map.LatLng(result.latitude, result.longitude), 15);
   }
 
   Future<void> calculate() async {
@@ -348,28 +398,59 @@ class _CustomerWorkspaceState extends State<CustomerWorkspace> {
             child: Padding(
               padding: const EdgeInsets.all(16),
               child: Column(children: [
-                ListTile(
-                  contentPadding: EdgeInsets.zero,
-                  leading: const Icon(Icons.my_location),
-                  title: Text(pickup == null
-                      ? 'Pickup not selected'
-                      : '${pickup!.latitude.toStringAsFixed(5)}, ${pickup!.longitude.toStringAsFixed(5)}'),
-                  trailing: FilledButton.tonal(
-                    onPressed: locate,
-                    child: const Text('Use GPS'),
+                TextField(
+                  controller: pickupAddress,
+                  textInputAction: TextInputAction.search,
+                  onSubmitted: (_) => searchPickup(),
+                  decoration: InputDecoration(
+                    labelText: 'Pickup location',
+                    hintText: 'Use GPS, search or paste an address',
+                    prefixIcon: const Icon(Icons.my_location),
+                    suffixIcon: IconButton(
+                      tooltip: 'Use my phone location',
+                      onPressed: locate,
+                      icon: const Icon(Icons.gps_fixed),
+                    ),
+                  ),
+                ),
+                if (pickupAddressResults.isNotEmpty)
+                  Card(
+                    child: Column(
+                      children: pickupAddressResults
+                          .map((result) => ListTile(
+                                leading: const Icon(Icons.trip_origin),
+                                title: Text(result.label ?? 'Pickup address'),
+                                onTap: () => selectPickupAddress(result),
+                              ))
+                          .toList(),
+                    ),
+                  ),
+                Align(
+                  alignment: Alignment.centerRight,
+                  child: TextButton.icon(
+                    onPressed: searchingPickupAddress ? null : searchPickup,
+                    icon: searchingPickupAddress
+                        ? const SizedBox.square(
+                            dimension: 16,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          )
+                        : const Icon(Icons.search),
+                    label: const Text('Search pickup'),
                   ),
                 ),
                 SizedBox(
-                  height: 280,
+                  height:
+                      MediaQuery.sizeOf(context).height.clamp(420, 620) * .72,
                   child: ClipRRect(
                     borderRadius: BorderRadius.circular(12),
                     child: FlutterMap(
+                      mapController: mapController,
                       options: MapOptions(
                         initialCenter: map.LatLng(
-                          pickup?.latitude ?? -26.2041,
-                          pickup?.longitude ?? 28.0473,
+                          pickup?.latitude ?? -30.5595,
+                          pickup?.longitude ?? 22.9375,
                         ),
-                        initialZoom: 11,
+                        initialZoom: pickup == null ? 5 : 15,
                         onTap: (_, point) => chooseDestination(point),
                       ),
                       children: [
@@ -451,14 +532,17 @@ class _CustomerWorkspaceState extends State<CustomerWorkspace> {
                 ),
                 const Padding(
                   padding: EdgeInsets.symmetric(vertical: 8),
-                  child: Text('Tap the map to mark your destination.'),
+                  child: Text(
+                    'Tap anywhere on the map to choose your destination.',
+                  ),
                 ),
                 TextField(
                   controller: destinationAddress,
                   textInputAction: TextInputAction.search,
                   onSubmitted: (_) => searchDestination(),
                   decoration: InputDecoration(
-                    labelText: 'Search destination address',
+                    labelText: 'Where to?',
+                    hintText: 'Search or paste a destination address',
                     prefixIcon: const Icon(Icons.search),
                     suffixIcon: IconButton(
                       tooltip: 'Search address',
@@ -485,52 +569,82 @@ class _CustomerWorkspaceState extends State<CustomerWorkspace> {
                     ),
                   ),
                 const SizedBox(height: 12),
-                Row(children: [
-                  Expanded(
-                    child: TextField(
-                      controller: destinationLat,
-                      keyboardType: TextInputType.number,
-                      decoration: const InputDecoration(labelText: 'Latitude'),
-                    ),
-                  ),
-                  const SizedBox(width: 10),
-                  Expanded(
-                    child: TextField(
-                      controller: destinationLng,
-                      keyboardType: TextInputType.number,
-                      decoration: const InputDecoration(labelText: 'Longitude'),
-                    ),
-                  ),
-                ]),
-                const SizedBox(height: 12),
                 OutlinedButton.icon(
                   onPressed: calculate,
                   icon: const Icon(Icons.calculate),
                   label: const Text('Estimate fare'),
                 ),
                 if (estimate != null) ...[
-                  const SizedBox(height: 12),
-                  Text(
-                    'R${estimate!.amount.toStringAsFixed(2)} · ${distance!.toStringAsFixed(1)} km · about $duration min',
-                    style: Theme.of(context).textTheme.titleMedium,
+                  const SizedBox(height: 16),
+                  Align(
+                    alignment: Alignment.centerLeft,
+                    child: Text(
+                      'Choose your ride',
+                      style: Theme.of(context).textTheme.titleLarge,
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                  Container(
+                    padding: const EdgeInsets.all(16),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFF0A3632),
+                      borderRadius: BorderRadius.circular(20),
+                      border: Border.all(
+                        color: const Color(0xFF00D69A),
+                        width: 2,
+                      ),
+                    ),
+                    child: Row(
+                      children: [
+                        const CircleAvatar(
+                          radius: 30,
+                          backgroundColor: Color(0xFF00D69A),
+                          child: Icon(
+                            Icons.local_taxi,
+                            color: Color(0xFF031B1A),
+                            size: 32,
+                          ),
+                        ),
+                        const SizedBox(width: 14),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                'Request Ride',
+                                style: Theme.of(context).textTheme.titleMedium,
+                              ),
+                              const SizedBox(height: 3),
+                              Text('About $duration min · up to 4 passengers'),
+                              Text(
+                                  '${distance!.toStringAsFixed(1)} km by road'),
+                            ],
+                          ),
+                        ),
+                        Text(
+                          'R${estimate!.amount.toStringAsFixed(2)}',
+                          style: Theme.of(context)
+                              .textTheme
+                              .titleLarge
+                              ?.copyWith(fontWeight: FontWeight.bold),
+                        ),
+                      ],
+                    ),
                   ),
                   const SizedBox(height: 12),
-                  SegmentedButton<String>(
-                    segments: const [
-                      ButtonSegment(
-                        value: 'cash',
-                        icon: Icon(Icons.payments_outlined),
-                        label: Text('Cash'),
-                      ),
-                      ButtonSegment(
-                        value: 'card',
-                        icon: Icon(Icons.credit_card),
-                        label: Text('Card'),
-                      ),
+                  DropdownButtonFormField<String>(
+                    initialValue: paymentMethod,
+                    decoration: const InputDecoration(
+                      labelText: 'Payment method',
+                      prefixIcon: Icon(Icons.account_balance_wallet_outlined),
+                    ),
+                    items: const [
+                      DropdownMenuItem(value: 'cash', child: Text('Cash')),
+                      DropdownMenuItem(value: 'card', child: Text('Card')),
                     ],
-                    selected: {paymentMethod},
-                    onSelectionChanged: (value) =>
-                        setState(() => paymentMethod = value.first),
+                    onChanged: (value) {
+                      if (value != null) setState(() => paymentMethod = value);
+                    },
                   ),
                   if (paymentMethod == 'card')
                     const Padding(
@@ -540,10 +654,13 @@ class _CustomerWorkspaceState extends State<CustomerWorkspace> {
                       ),
                     ),
                   const SizedBox(height: 12),
-                  FilledButton.icon(
-                    onPressed: busy ? null : request,
-                    icon: const Icon(Icons.local_taxi),
-                    label: Text(busy ? 'Requesting…' : 'Request ride'),
+                  SizedBox(
+                    width: double.infinity,
+                    child: FilledButton.icon(
+                      onPressed: busy ? null : request,
+                      icon: const Icon(Icons.local_taxi),
+                      label: Text(busy ? 'Requesting…' : 'Select Request Ride'),
+                    ),
                   ),
                 ],
               ]),
