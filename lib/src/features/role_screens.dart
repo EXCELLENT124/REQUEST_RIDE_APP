@@ -262,6 +262,9 @@ class _CustomerWorkspaceState extends State<CustomerWorkspace> {
       mapController.move(map.LatLng(point.latitude, point.longitude), 15);
       startDriverRefresh();
       await loadOnlineDrivers();
+      if (destinationAddress.text.trim().length >= 3) {
+        await calculate();
+      }
     } catch (error) {
       if (mounted) _message(context, error);
     }
@@ -280,6 +283,7 @@ class _CustomerWorkspaceState extends State<CustomerWorkspace> {
       routePoints = const [];
       addressResults = const [];
     });
+    await calculate();
   }
 
   Future<void> searchPickup() async {
@@ -304,8 +308,12 @@ class _CustomerWorkspaceState extends State<CustomerWorkspace> {
       routePoints = const [];
     });
     mapController.move(map.LatLng(result.latitude, result.longitude), 15);
+    unawaited(calculate());
     startDriverRefresh();
     loadOnlineDrivers();
+    if (destinationAddress.text.trim().length >= 3) {
+      unawaited(calculate());
+    }
   }
 
   Future<void> searchDestination() async {
@@ -438,6 +446,39 @@ class _CustomerWorkspaceState extends State<CustomerWorkspace> {
                     label: const Text('Search pickup'),
                   ),
                 ),
+                TextField(
+                  controller: destinationAddress,
+                  textInputAction: TextInputAction.search,
+                  onSubmitted: (_) => searchDestination(),
+                  decoration: InputDecoration(
+                    labelText: 'Where to?',
+                    hintText: 'Search or paste a destination address',
+                    prefixIcon: const Icon(Icons.search),
+                    suffixIcon: IconButton(
+                      tooltip: 'Search address',
+                      onPressed: searchingAddress ? null : searchDestination,
+                      icon: searchingAddress
+                          ? const Padding(
+                              padding: EdgeInsets.all(12),
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            )
+                          : const Icon(Icons.arrow_forward),
+                    ),
+                  ),
+                ),
+                if (addressResults.isNotEmpty)
+                  Card(
+                    child: Column(
+                      children: addressResults
+                          .map((result) => ListTile(
+                                leading: const Icon(Icons.location_on_outlined),
+                                title: Text(result.label ?? 'Address'),
+                                onTap: () => selectAddress(result),
+                              ))
+                          .toList(),
+                    ),
+                  ),
+                const SizedBox(height: 12),
                 SizedBox(
                   height:
                       MediaQuery.sizeOf(context).height.clamp(420, 620) * .72,
@@ -535,44 +576,6 @@ class _CustomerWorkspaceState extends State<CustomerWorkspace> {
                   child: Text(
                     'Tap anywhere on the map to choose your destination.',
                   ),
-                ),
-                TextField(
-                  controller: destinationAddress,
-                  textInputAction: TextInputAction.search,
-                  onSubmitted: (_) => searchDestination(),
-                  decoration: InputDecoration(
-                    labelText: 'Where to?',
-                    hintText: 'Search or paste a destination address',
-                    prefixIcon: const Icon(Icons.search),
-                    suffixIcon: IconButton(
-                      tooltip: 'Search address',
-                      onPressed: searchingAddress ? null : searchDestination,
-                      icon: searchingAddress
-                          ? const Padding(
-                              padding: EdgeInsets.all(12),
-                              child: CircularProgressIndicator(strokeWidth: 2),
-                            )
-                          : const Icon(Icons.arrow_forward),
-                    ),
-                  ),
-                ),
-                if (addressResults.isNotEmpty)
-                  Card(
-                    child: Column(
-                      children: addressResults
-                          .map((result) => ListTile(
-                                leading: const Icon(Icons.location_on_outlined),
-                                title: Text(result.label ?? 'Address'),
-                                onTap: () => selectAddress(result),
-                              ))
-                          .toList(),
-                    ),
-                  ),
-                const SizedBox(height: 12),
-                OutlinedButton.icon(
-                  onPressed: calculate,
-                  icon: const Icon(Icons.calculate),
-                  label: const Text('Estimate fare'),
                 ),
                 if (estimate != null) ...[
                   const SizedBox(height: 16),
