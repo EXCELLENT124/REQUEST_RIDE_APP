@@ -118,10 +118,11 @@ class Backend {
     required GeoPoint destination,
     required double distanceKm,
     required int durationMinutes,
+    required String driverId,
     String paymentMethod = 'cash',
   }) async {
     final id = await client.rpc(
-      'request_ride',
+      'request_ride_for_driver',
       params: {
         'p_pickup_lat': pickup.latitude,
         'p_pickup_lng': pickup.longitude,
@@ -131,6 +132,7 @@ class Backend {
         'p_destination_address': destination.label,
         'p_distance_km': distanceKm,
         'p_duration_minutes': durationMinutes,
+        'p_driver_id': driverId,
       },
     );
     await client.rpc('set_ride_payment_method', params: {
@@ -164,6 +166,11 @@ class Backend {
 
   Future<void> acceptRide(String rideId) =>
       client.rpc('accept_ride', params: {'p_ride_id': rideId});
+
+  Future<void> declineRide(String rideId, String reason) => client.rpc(
+        'decline_ride_offer',
+        params: {'p_ride_id': rideId, 'p_reason': reason},
+      );
 
   Future<List<Ride>> availableRideRequests() async =>
       List<Map<String, dynamic>>.from(

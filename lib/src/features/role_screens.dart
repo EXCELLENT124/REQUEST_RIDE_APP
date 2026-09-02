@@ -90,6 +90,77 @@ Future<void> _cancelRideDialog(
   }
 }
 
+Future<String?> _driverDeclineReasonDialog(BuildContext context) async {
+  const other = 'Other reason';
+  final otherController = TextEditingController();
+  var selected = 'Not available';
+  final reason = await showDialog<String>(
+    context: context,
+    builder: (context) => StatefulBuilder(
+      builder: (context, setDialogState) => AlertDialog(
+        title: const Text('Reject ride request'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            DropdownButtonFormField<String>(
+              initialValue: selected,
+              decoration: const InputDecoration(labelText: 'Reason'),
+              items: const [
+                DropdownMenuItem(
+                  value: 'Not available',
+                  child: Text('Not available'),
+                ),
+                DropdownMenuItem(
+                  value: 'Too far from pickup',
+                  child: Text('Too far from pickup'),
+                ),
+                DropdownMenuItem(
+                  value: 'Vehicle issue',
+                  child: Text('Vehicle issue'),
+                ),
+                DropdownMenuItem(
+                  value: 'Ending my shift',
+                  child: Text('Ending my shift'),
+                ),
+                DropdownMenuItem(value: other, child: Text(other)),
+              ],
+              onChanged: (value) {
+                if (value != null) setDialogState(() => selected = value);
+              },
+            ),
+            if (selected == other) ...[
+              const SizedBox(height: 12),
+              TextField(
+                controller: otherController,
+                maxLength: 250,
+                decoration: const InputDecoration(
+                  labelText: 'Other reason',
+                ),
+              ),
+            ],
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Go back'),
+          ),
+          FilledButton(
+            onPressed: () {
+              final value =
+                  selected == other ? otherController.text.trim() : selected;
+              if (value.length >= 3) Navigator.pop(context, value);
+            },
+            child: const Text('Reject request'),
+          ),
+        ],
+      ),
+    ),
+  );
+  otherController.dispose();
+  return reason;
+}
+
 Future<void> _safetyDialog(
   BuildContext context,
   Backend backend,
@@ -206,6 +277,7 @@ class _CustomerWorkspaceState extends State<CustomerWorkspace> {
   var searchingPickupAddress = false;
   String paymentMethod = 'cash';
   String? minimizedRideId;
+  String? selectedDriverId;
 
   @override
   void initState() {
@@ -242,7 +314,16 @@ class _CustomerWorkspaceState extends State<CustomerWorkspace> {
       final drivers = await widget.backend.nearbyOnlineDrivers(
         customerLocation,
       );
-      if (mounted) setState(() => onlineDrivers = drivers);
+      if (mounted) {
+        setState(() {
+          onlineDrivers = drivers;
+          if (!drivers.any(
+            (driver) => driver['driver_id'] == selectedDriverId,
+          )) {
+            selectedDriverId = null;
+          }
+        });
+      }
     } catch (error) {
       if (mounted) setState(() => driverLoadError = '$error');
     } finally {
@@ -375,7 +456,14 @@ class _CustomerWorkspaceState extends State<CustomerWorkspace> {
   }
 
   Future<void> request() async {
-    if (estimate == null || distance == null || duration == null) return;
+    final driverId = selectedDriverId;
+    if (estimate == null ||
+        distance == null ||
+        duration == null ||
+        driverId == null) {
+      _message(context, 'Select your preferred driver first.');
+      return;
+    }
     setState(() => busy = true);
     try {
       final id = await widget.backend.requestRide(
@@ -387,6 +475,7 @@ class _CustomerWorkspaceState extends State<CustomerWorkspace> {
         ),
         distanceKm: distance!,
         durationMinutes: duration!,
+        driverId: driverId,
         paymentMethod: paymentMethod,
       );
       if (mounted) _message(context, 'Ride requested: ${id.substring(0, 8)}');
@@ -685,16 +774,6 @@ class _CustomerWorkspaceState extends State<CustomerWorkspace> {
                             'Card payment will remain pending until a payment provider is connected. Never enter card details directly into this app.',
                           ),
                         ),
-                      const SizedBox(height: 12),
-                      SizedBox(
-                        width: double.infinity,
-                        child: FilledButton.icon(
-                          onPressed: busy ? null : request,
-                          icon: const Icon(Icons.local_taxi),
-                          label: Text(
-                              busy ? 'Requesting…' : 'Select Request Ride'),
-                        ),
-                      ),
                     ],
                   ]),
                 ),
@@ -762,18 +841,52 @@ class _CustomerWorkspaceState extends State<CustomerWorkspace> {
                 for (final driver in onlineDrivers)
                   Card(
                     child: ListTile(
-                      leading:
-                          const CircleAvatar(child: Icon(Icons.local_taxi)),
+                      selected: driver['driver_id'] == selectedDriverId,
+                      onTap: estimate == null
+                          ? null
+                          : () => setState(() =>
+                              selectedDriverId = driver['driver_id'] as String),
+                      leading: CircleAvatar(
+                        child: Icon(
+                          driver['driver_id'] == selectedDriverId
+                              ? Icons.radio_button_checked
+                              : Icons.radio_button_off,
+                        ),
+                      ),
                       title: Text('${driver['full_name']}'),
                       subtitle: Text(
-                        '${driver['vehicle_colour']} ${driver['vehicle_make']} ${driver['vehicle_model']} · ${driver['number_plate']}',
+                        '${driver['vehicle_colour']} ${driver['vehicle_make']} ${driver['vehicle_model']} · ${driver['number_plate']}'
+                        '${estimate == null ? '\nChoose a route to see the price' : '\nR${estimate!.amount.toStringAsFixed(2)} · $paymentMethod'}',
                       ),
-                      trailing: Text(
-                        '${(driver['distance_km'] as num).toDouble().toStringAsFixed(1)} km',
-                        style: Theme.of(context).textTheme.titleMedium,
+                      trailing: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Text(
+                            '${(driver['distance_km'] as num).toDouble().toStringAsFixed(1)} km',
+                            style: Theme.of(context).textTheme.titleMedium,
+                          ),
+                          if (driver['driver_id'] == selectedDriverId)
+                            const Text('Selected'),
+                        ],
                       ),
                     ),
                   ),
+                if (estimate != null) ...[
+                  const SizedBox(height: 8),
+                  SizedBox(
+                    width: double.infinity,
+                    child: FilledButton.icon(
+                      onPressed:
+                          busy || selectedDriverId == null ? null : request,
+                      icon: const Icon(Icons.local_taxi),
+                      label: Text(busy
+                          ? 'Requesting…'
+                          : selectedDriverId == null
+                              ? 'Select your preferred driver'
+                              : 'Request selected driver · R${estimate!.amount.toStringAsFixed(2)}'),
+                    ),
+                  ),
+                ],
               ],
               const SizedBox(height: 18),
               StreamBuilder<List<Ride>>(
@@ -1554,6 +1667,17 @@ class _DriverWorkspaceState extends State<DriverWorkspace> {
     }
   }
 
+  Future<void> decline(Ride ride) async {
+    final reason = await _driverDeclineReasonDialog(context);
+    if (reason == null || !mounted) return;
+    try {
+      await widget.backend.declineRide(ride.id, reason);
+      if (mounted) _message(context, 'Ride request rejected');
+    } catch (error) {
+      if (mounted) _message(context, error);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final status = application?['status'] ?? 'draft';
@@ -1622,6 +1746,7 @@ class _DriverWorkspaceState extends State<DriverWorkspace> {
                               ride: ride,
                               enabled: online,
                               onAccept: () => accept(ride),
+                              onReject: () => decline(ride),
                             ))
                         .toList(),
                   ),
@@ -1779,11 +1904,13 @@ class _DriverRequestCard extends StatelessWidget {
     required this.ride,
     required this.enabled,
     required this.onAccept,
+    required this.onReject,
   });
 
   final Ride ride;
   final bool enabled;
   final VoidCallback onAccept;
+  final VoidCallback onReject;
 
   @override
   Widget build(BuildContext context) => Card(
@@ -1814,12 +1941,26 @@ class _DriverRequestCard extends StatelessWidget {
             ),
             Padding(
               padding: const EdgeInsets.all(14),
-              child: FilledButton.icon(
-                onPressed: enabled ? onAccept : null,
-                icon: const Icon(Icons.check_circle),
-                label: Text(enabled
-                    ? 'Accept and navigate to customer'
-                    : 'Go online to accept'),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: OutlinedButton.icon(
+                      onPressed: enabled ? onReject : null,
+                      icon: const Icon(Icons.close),
+                      label: const Text('Reject'),
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    flex: 2,
+                    child: FilledButton.icon(
+                      onPressed: enabled ? onAccept : null,
+                      icon: const Icon(Icons.check_circle),
+                      label:
+                          Text(enabled ? 'Accept ride' : 'Go online to accept'),
+                    ),
+                  ),
+                ],
               ),
             ),
           ],
