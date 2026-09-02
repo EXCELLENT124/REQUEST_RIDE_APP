@@ -1087,7 +1087,7 @@ class _CustomerLiveRideCard extends StatelessWidget {
                           : 'R${ride.estimatedFare!.toStringAsFixed(2)}'),
                     ),
                     SizedBox(
-                      height: 300,
+                      height: 210,
                       child: FlutterMap(
                         key: ValueKey(
                           '${ride.id}-${driver?.latitude}-${driver?.longitude}',
@@ -1188,26 +1188,23 @@ class _CustomerLiveRideCard extends StatelessWidget {
                       ),
                     ),
                     Padding(
-                      padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
+                      padding: const EdgeInsets.fromLTRB(8, 6, 8, 8),
                       child: Row(
                         children: [
-                          TextButton.icon(
-                            onPressed: onOpenFullScreen,
-                            icon: const Icon(Icons.map_outlined),
-                            label: const Text('Open live map'),
-                          ),
-                          const Icon(Icons.sync, size: 18),
-                          const SizedBox(width: 8),
                           Expanded(
-                            child: Text(driver == null
-                                ? 'Live tracking will begin automatically.'
-                                : 'Driver location updates automatically.'),
+                            child: TextButton.icon(
+                              onPressed: onOpenFullScreen,
+                              icon: const Icon(Icons.map_outlined),
+                              label: const Text('Live map'),
+                            ),
                           ),
-                          TextButton.icon(
-                            onPressed: () =>
-                                _cancelRideDialog(context, backend, ride),
-                            icon: const Icon(Icons.cancel_outlined),
-                            label: const Text('Cancel'),
+                          Expanded(
+                            child: TextButton.icon(
+                              onPressed: () =>
+                                  _cancelRideDialog(context, backend, ride),
+                              icon: const Icon(Icons.cancel_outlined),
+                              label: const Text('Cancel'),
+                            ),
                           ),
                           IconButton(
                             tooltip: 'Trip safety',
