@@ -415,6 +415,7 @@ class _CustomerWorkspaceState extends State<CustomerWorkspace> {
   }
 
   void selectAddress(GeoPoint result) {
+    FocusManager.instance.primaryFocus?.unfocus();
     setState(() {
       destinationAddress.text = result.label ?? '';
       destinationLat.text = result.latitude.toStringAsFixed(6);
@@ -424,6 +425,7 @@ class _CustomerWorkspaceState extends State<CustomerWorkspace> {
       routePoints = const [];
     });
     mapController.move(map.LatLng(result.latitude, result.longitude), 15);
+    unawaited(calculate());
   }
 
   Future<void> calculate() async {
@@ -455,8 +457,8 @@ class _CustomerWorkspaceState extends State<CustomerWorkspace> {
     }
   }
 
-  Future<void> request() async {
-    final driverId = selectedDriverId;
+  Future<void> request([String? preferredDriverId]) async {
+    final driverId = preferredDriverId ?? selectedDriverId;
     if (estimate == null ||
         distance == null ||
         duration == null ||
@@ -484,6 +486,19 @@ class _CustomerWorkspaceState extends State<CustomerWorkspace> {
     } finally {
       if (mounted) setState(() => busy = false);
     }
+  }
+
+  Future<void> requestNearestDriver() async {
+    FocusManager.instance.primaryFocus?.unfocus();
+    if (estimate == null) await calculate();
+    if (onlineDrivers.isEmpty) await loadOnlineDrivers();
+    if (!mounted || onlineDrivers.isEmpty) {
+      if (mounted) _message(context, 'No drivers are available right now.');
+      return;
+    }
+    final nearestDriverId = onlineDrivers.first['driver_id'] as String;
+    setState(() => selectedDriverId = nearestDriverId);
+    await request(nearestDriverId);
   }
 
   @override
@@ -840,50 +855,79 @@ class _CustomerWorkspaceState extends State<CustomerWorkspace> {
                   ),
                 for (final driver in onlineDrivers)
                   Card(
-                    child: ListTile(
-                      selected: driver['driver_id'] == selectedDriverId,
-                      onTap: estimate == null
-                          ? null
-                          : () => setState(() =>
-                              selectedDriverId = driver['driver_id'] as String),
-                      leading: CircleAvatar(
-                        child: Icon(
-                          driver['driver_id'] == selectedDriverId
-                              ? Icons.radio_button_checked
-                              : Icons.radio_button_off,
-                        ),
-                      ),
-                      title: Text('${driver['full_name']}'),
-                      subtitle: Text(
-                        '${driver['vehicle_colour']} ${driver['vehicle_make']} ${driver['vehicle_model']} · ${driver['number_plate']}'
-                        '${estimate == null ? '\nChoose a route to see the price' : '\nR${estimate!.amount.toStringAsFixed(2)} · $paymentMethod'}',
-                      ),
-                      trailing: Column(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          Text(
-                            '${(driver['distance_km'] as num).toDouble().toStringAsFixed(1)} km',
-                            style: Theme.of(context).textTheme.titleMedium,
+                    clipBehavior: Clip.antiAlias,
+                    child: Column(
+                      children: [
+                        ListTile(
+                          selected: driver['driver_id'] == selectedDriverId,
+                          onTap: estimate == null
+                              ? null
+                              : () => setState(() => selectedDriverId =
+                                  driver['driver_id'] as String),
+                          leading: CircleAvatar(
+                            backgroundColor: const Color(0xFF00D69A),
+                            child: Icon(
+                              driver['driver_id'] == selectedDriverId
+                                  ? Icons.check_circle
+                                  : Icons.local_taxi,
+                              color: const Color(0xFF031B1A),
+                            ),
                           ),
-                          if (driver['driver_id'] == selectedDriverId)
-                            const Text('Selected'),
-                        ],
-                      ),
+                          title: Text('${driver['full_name']}'),
+                          subtitle: Text(
+                            '${driver['vehicle_colour']} ${driver['vehicle_make']} ${driver['vehicle_model']} · ${driver['number_plate']}'
+                            '${estimate == null ? '\nCalculating route and price…' : '\nR${estimate!.amount.toStringAsFixed(2)} · $paymentMethod'}',
+                          ),
+                          trailing: Column(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              Text(
+                                '${(driver['distance_km'] as num).toDouble().toStringAsFixed(1)} km',
+                                style: Theme.of(context).textTheme.titleMedium,
+                              ),
+                              if (driver['driver_id'] == selectedDriverId)
+                                const Text('Selected'),
+                            ],
+                          ),
+                        ),
+                        if (estimate != null)
+                          Padding(
+                            padding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
+                            child: SizedBox(
+                              width: double.infinity,
+                              child: FilledButton.icon(
+                                onPressed: busy
+                                    ? null
+                                    : () {
+                                        final driverId =
+                                            driver['driver_id'] as String;
+                                        setState(
+                                          () => selectedDriverId = driverId,
+                                        );
+                                        request(driverId);
+                                      },
+                                icon: const Icon(Icons.local_taxi),
+                                label: Text(
+                                  'Request this driver · R${estimate!.amount.toStringAsFixed(2)}',
+                                ),
+                              ),
+                            ),
+                          ),
+                      ],
                     ),
                   ),
                 if (estimate != null) ...[
                   const SizedBox(height: 8),
                   SizedBox(
                     width: double.infinity,
-                    child: FilledButton.icon(
-                      onPressed:
-                          busy || selectedDriverId == null ? null : request,
-                      icon: const Icon(Icons.local_taxi),
-                      label: Text(busy
-                          ? 'Requesting…'
-                          : selectedDriverId == null
-                              ? 'Select your preferred driver'
-                              : 'Request selected driver · R${estimate!.amount.toStringAsFixed(2)}'),
+                    child: OutlinedButton.icon(
+                      onPressed: busy ? null : requestNearestDriver,
+                      icon: const Icon(Icons.auto_awesome),
+                      label: Text(
+                        busy
+                            ? 'Requesting…'
+                            : 'Automatically request nearest driver',
+                      ),
                     ),
                   ),
                 ],
