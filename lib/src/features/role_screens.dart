@@ -741,26 +741,68 @@ class _CustomerWorkspaceState extends State<CustomerWorkspace> {
               ),
           ],
           const SizedBox(height: 18),
-          Text('Your trips', style: Theme.of(context).textTheme.titleLarge),
           StreamBuilder<List<Ride>>(
             stream: widget.backend.rides(),
             builder: (context, snapshot) {
               final rides = snapshot.data ?? [];
-              if (rides.isEmpty) {
-                return const ListTile(title: Text('No trips yet'));
-              }
+              final currentRides = rides
+                  .where((ride) =>
+                      ride.status == RideStatus.searching ||
+                      _isLiveRide(ride.status))
+                  .toList();
+              final history = rides
+                  .where((ride) =>
+                      ride.status == RideStatus.completed ||
+                      ride.status == RideStatus.cancelled)
+                  .toList()
+                ..sort((a, b) => (b.requestedAt ?? DateTime(1970))
+                    .compareTo(a.requestedAt ?? DateTime(1970)));
               return Column(
-                children: rides
-                    .map((ride) => _isLiveRide(ride.status)
-                        ? _CustomerLiveRideCard(
-                            backend: widget.backend,
-                            ride: ride,
-                          )
-                        : _TripSummaryCard(
-                            backend: widget.backend,
-                            ride: ride,
-                          ))
-                    .toList(),
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  if (currentRides.isNotEmpty) ...[
+                    Text(
+                      currentRides.length == 1
+                          ? 'Current trip'
+                          : 'Current trips',
+                      style: Theme.of(context).textTheme.titleLarge,
+                    ),
+                    for (final ride in currentRides)
+                      _isLiveRide(ride.status)
+                          ? _CustomerLiveRideCard(
+                              backend: widget.backend,
+                              ride: ride,
+                            )
+                          : _TripSummaryCard(
+                              backend: widget.backend,
+                              ride: ride,
+                            ),
+                    const SizedBox(height: 12),
+                  ],
+                  Card(
+                    child: ExpansionTile(
+                      initiallyExpanded: false,
+                      leading: const Icon(Icons.history),
+                      title: const Text('Trip history'),
+                      subtitle: Text(history.isEmpty
+                          ? 'No previous trips yet'
+                          : '${history.length} previous trips · tap to view'),
+                      children: history.isEmpty
+                          ? const [
+                              ListTile(
+                                title: Text(
+                                    'Completed and cancelled trips will appear here.'),
+                              ),
+                            ]
+                          : history
+                              .map((ride) => _TripSummaryCard(
+                                    backend: widget.backend,
+                                    ride: ride,
+                                  ))
+                              .toList(),
+                    ),
+                  ),
+                ],
               );
             },
           ),
