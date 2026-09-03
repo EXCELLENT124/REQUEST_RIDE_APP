@@ -416,14 +416,14 @@ class _MainMenu extends StatelessWidget {
                 child: ListView(
                   padding: EdgeInsets.zero,
                   children: [
-                    if (profile.role == UserRole.customer)
+                    if (profile.role != UserRole.admin)
                       ListTile(
                         leading: const Icon(Icons.history),
                         title: const Text('Trip history'),
                         subtitle: const Text('Completed and cancelled rides'),
                         onTap: () => _closeThen(
                           context,
-                          () => showCustomerTripHistory(context, backend),
+                          () => showTripHistory(context, backend),
                         ),
                       ),
                     ListTile(

@@ -1093,7 +1093,7 @@ bool _isLiveRide(RideStatus status) => switch (status) {
       _ => false,
     };
 
-Future<void> showCustomerTripHistory(
+Future<void> showTripHistory(
   BuildContext context,
   Backend backend,
 ) =>
@@ -1988,13 +1988,6 @@ class _DriverWorkspaceState extends State<DriverWorkspace> {
               onBack: () => setState(() => minimizedRideId = activeRide.id),
             );
           }
-          final history = driverRides
-              .where((ride) =>
-                  ride.status == RideStatus.completed ||
-                  ride.status == RideStatus.cancelled)
-              .toList()
-            ..sort((a, b) => (b.requestedAt ?? DateTime(1970))
-                .compareTo(a.requestedAt ?? DateTime(1970)));
           return ListView(
             padding: const EdgeInsets.all(20),
             children: [
@@ -2042,21 +2035,6 @@ class _DriverWorkspaceState extends State<DriverWorkspace> {
                   ),
                 ),
               ],
-              const SizedBox(height: 12),
-              ExpansionTile(
-                leading: const Icon(Icons.history),
-                title: const Text('Ride history'),
-                subtitle: Text(history.isEmpty
-                    ? 'No completed or cancelled rides yet'
-                    : '${history.length} previous rides'),
-                children: history
-                    .map((ride) => _TripSummaryCard(
-                          backend: widget.backend,
-                          ride: ride,
-                        ))
-                    .toList(),
-              ),
-              _NotificationInbox(backend: widget.backend),
             ],
           );
         },
