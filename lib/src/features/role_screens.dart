@@ -42,6 +42,19 @@ double _distanceKm(GeoPoint a, GeoPoint b) {
   return radius * 2 * math.atan2(math.sqrt(value), math.sqrt(1 - value));
 }
 
+double _routeBearingRadians(List<GeoPoint> points) {
+  if (points.length < 2) return 0;
+  final start = points.first;
+  final end = points[math.min(5, points.length - 1)];
+  final startLat = start.latitude * math.pi / 180;
+  final endLat = end.latitude * math.pi / 180;
+  final deltaLng = (end.longitude - start.longitude) * math.pi / 180;
+  final y = math.sin(deltaLng) * math.cos(endLat);
+  final x = math.cos(startLat) * math.sin(endLat) -
+      math.sin(startLat) * math.cos(endLat) * math.cos(deltaLng);
+  return math.atan2(y, x);
+}
+
 void _message(BuildContext context, Object value) =>
     ScaffoldMessenger.of(context)
         .showSnackBar(SnackBar(content: Text('$value')));
@@ -1315,12 +1328,25 @@ class _FullScreenCustomerRoute extends StatelessWidget {
               ),
               children: [
                 TileLayer(
-                  urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+                  urlTemplate: approachingDestination
+                      ? 'https://basemaps.cartocdn.com/dark_all/{z}/{x}/{y}@2x.png'
+                      : 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
                   userAgentPackageName: 'za.co.requestride.request_ride',
                 ),
                 if (points.isNotEmpty)
                   PolylineLayer(
                     polylines: [
+                      if (approachingDestination)
+                        Polyline(
+                          points: points
+                              .map((point) => map.LatLng(
+                                    point.latitude,
+                                    point.longitude,
+                                  ))
+                              .toList(),
+                          strokeWidth: 15,
+                          color: const Color(0xFF050708),
+                        ),
                       Polyline(
                         points: points
                             .map((point) => map.LatLng(
@@ -1328,8 +1354,10 @@ class _FullScreenCustomerRoute extends StatelessWidget {
                                   point.longitude,
                                 ))
                             .toList(),
-                        strokeWidth: 7,
-                        color: const Color(0xFF00D69A),
+                        strokeWidth: approachingDestination ? 8 : 7,
+                        color: approachingDestination
+                            ? const Color(0xFF00D7FF)
+                            : const Color(0xFF00D69A),
                       ),
                     ],
                   ),
@@ -1338,17 +1366,35 @@ class _FullScreenCustomerRoute extends StatelessWidget {
                     if (origin != null)
                       Marker(
                         point: map.LatLng(origin.latitude, origin.longitude),
-                        child: const DecoratedBox(
-                          decoration: BoxDecoration(
-                            color: Color(0xFF031B1A),
-                            shape: BoxShape.circle,
-                          ),
-                          child: Padding(
-                            padding: EdgeInsets.all(7),
-                            child: Icon(
-                              Icons.local_taxi,
-                              color: Color(0xFF00D69A),
-                              size: 30,
+                        width: 58,
+                        height: 58,
+                        child: Transform.rotate(
+                          angle: approachingDestination
+                              ? _routeBearingRadians(points)
+                              : 0,
+                          child: DecoratedBox(
+                            decoration: BoxDecoration(
+                              color: approachingDestination
+                                  ? const Color(0xFF0077FF)
+                                  : const Color(0xFF031B1A),
+                              shape: BoxShape.circle,
+                              border: Border.all(color: Colors.white, width: 3),
+                              boxShadow: const [
+                                BoxShadow(
+                                  color: Colors.black54,
+                                  blurRadius: 10,
+                                ),
+                              ],
+                            ),
+                            child: Padding(
+                              padding: const EdgeInsets.all(7),
+                              child: Icon(
+                                approachingDestination
+                                    ? Icons.navigation
+                                    : Icons.local_taxi,
+                                color: Colors.white,
+                                size: 34,
+                              ),
                             ),
                           ),
                         ),
@@ -1369,7 +1415,7 @@ class _FullScreenCustomerRoute extends StatelessWidget {
                 ),
                 const RichAttributionWidget(
                   attributions: [
-                    TextSourceAttribution('OpenStreetMap contributors'),
+                    TextSourceAttribution('OpenStreetMap · CARTO'),
                   ],
                 ),
               ],
@@ -2119,12 +2165,25 @@ class _FullScreenDriverRoute extends StatelessWidget {
               ),
               children: [
                 TileLayer(
-                  urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+                  urlTemplate: travellingToDestination
+                      ? 'https://basemaps.cartocdn.com/dark_all/{z}/{x}/{y}@2x.png'
+                      : 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
                   userAgentPackageName: 'za.co.requestride.request_ride',
                 ),
                 if (points.isNotEmpty)
                   PolylineLayer(
                     polylines: [
+                      if (travellingToDestination)
+                        Polyline(
+                          points: points
+                              .map((point) => map.LatLng(
+                                    point.latitude,
+                                    point.longitude,
+                                  ))
+                              .toList(),
+                          strokeWidth: 15,
+                          color: const Color(0xFF050708),
+                        ),
                       Polyline(
                         points: points
                             .map((point) => map.LatLng(
@@ -2132,8 +2191,10 @@ class _FullScreenDriverRoute extends StatelessWidget {
                                   point.longitude,
                                 ))
                             .toList(),
-                        strokeWidth: 7,
-                        color: const Color(0xFF00D69A),
+                        strokeWidth: travellingToDestination ? 8 : 7,
+                        color: travellingToDestination
+                            ? const Color(0xFF00D7FF)
+                            : const Color(0xFF00D69A),
                       ),
                     ],
                   ),
@@ -2142,17 +2203,35 @@ class _FullScreenDriverRoute extends StatelessWidget {
                     if (origin != null)
                       Marker(
                         point: map.LatLng(origin.latitude, origin.longitude),
-                        child: const DecoratedBox(
-                          decoration: BoxDecoration(
-                            color: Color(0xFF031B1A),
-                            shape: BoxShape.circle,
-                          ),
-                          child: Padding(
-                            padding: EdgeInsets.all(7),
-                            child: Icon(
-                              Icons.local_taxi,
-                              color: Color(0xFF00D69A),
-                              size: 30,
+                        width: 58,
+                        height: 58,
+                        child: Transform.rotate(
+                          angle: travellingToDestination
+                              ? _routeBearingRadians(points)
+                              : 0,
+                          child: DecoratedBox(
+                            decoration: BoxDecoration(
+                              color: travellingToDestination
+                                  ? const Color(0xFF0077FF)
+                                  : const Color(0xFF031B1A),
+                              shape: BoxShape.circle,
+                              border: Border.all(color: Colors.white, width: 3),
+                              boxShadow: const [
+                                BoxShadow(
+                                  color: Colors.black54,
+                                  blurRadius: 10,
+                                ),
+                              ],
+                            ),
+                            child: Padding(
+                              padding: const EdgeInsets.all(7),
+                              child: Icon(
+                                travellingToDestination
+                                    ? Icons.navigation
+                                    : Icons.local_taxi,
+                                color: Colors.white,
+                                size: 34,
+                              ),
                             ),
                           ),
                         ),
@@ -2173,7 +2252,7 @@ class _FullScreenDriverRoute extends StatelessWidget {
                 ),
                 const RichAttributionWidget(
                   attributions: [
-                    TextSourceAttribution('OpenStreetMap contributors'),
+                    TextSourceAttribution('OpenStreetMap · CARTO'),
                   ],
                 ),
               ],

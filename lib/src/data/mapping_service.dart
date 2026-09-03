@@ -78,7 +78,12 @@ class MappingService {
     final uri = Uri.https(
       'router.project-osrm.org',
       '/route/v1/driving/$coordinates',
-      {'overview': 'full', 'geometries': 'geojson', 'steps': 'false'},
+      {
+        'overview': 'full',
+        'geometries': 'geojson',
+        'steps': 'false',
+        'alternatives': 'true',
+      },
     );
     final response =
         await _client.get(uri).timeout(const Duration(seconds: 20));
@@ -88,7 +93,11 @@ class MappingService {
     final body = jsonDecode(response.body) as Map<String, dynamic>;
     final routes = body['routes'] as List<dynamic>? ?? const [];
     if (routes.isEmpty) throw Exception('No driving route was found.');
-    final route = routes.first as Map<String, dynamic>;
+    final route = routes.map((value) => value as Map<String, dynamic>).reduce(
+        (shortest, candidate) => (candidate['distance'] as num).toDouble() <
+                (shortest['distance'] as num).toDouble()
+            ? candidate
+            : shortest);
     final geometry = route['geometry'] as Map<String, dynamic>;
     final coordinatesJson = geometry['coordinates'] as List<dynamic>;
     return RouteResult(
