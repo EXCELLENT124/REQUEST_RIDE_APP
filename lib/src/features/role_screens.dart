@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_map/flutter_map.dart';
+import 'package:flutter_tts/flutter_tts.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:latlong2/latlong.dart' as map;
 import 'package:url_launcher/url_launcher.dart';
@@ -53,6 +54,100 @@ double _routeBearingRadians(List<GeoPoint> points) {
   final x = math.cos(startLat) * math.sin(endLat) -
       math.sin(startLat) * math.cos(endLat) * math.cos(deltaLng);
   return math.atan2(y, x);
+}
+
+class _NavigationVoiceButton extends StatefulWidget {
+  const _NavigationVoiceButton({
+    required this.stage,
+    required this.instruction,
+    required this.instructionDistanceMeters,
+    required this.etaMinutes,
+  });
+
+  final String stage;
+  final String? instruction;
+  final int? instructionDistanceMeters;
+  final int? etaMinutes;
+
+  @override
+  State<_NavigationVoiceButton> createState() => _NavigationVoiceButtonState();
+}
+
+class _NavigationVoiceButtonState extends State<_NavigationVoiceButton> {
+  final FlutterTts speech = FlutterTts();
+  var enabled = true;
+  String? lastInstruction;
+  int? lastEta;
+
+  @override
+  void initState() {
+    super.initState();
+    unawaited(_configure());
+    WidgetsBinding.instance.addPostFrameCallback((_) => _announce(force: true));
+  }
+
+  Future<void> _configure() async {
+    await speech.setLanguage('en-ZA');
+    await speech.setSpeechRate(0.48);
+    await speech.setVolume(1);
+    await speech.setPitch(1);
+  }
+
+  @override
+  void didUpdateWidget(covariant _NavigationVoiceButton oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    final instructionChanged =
+        widget.instruction != null && widget.instruction != lastInstruction;
+    final etaChanged = widget.etaMinutes != null &&
+        (lastEta == null || (widget.etaMinutes! - lastEta!).abs() >= 3);
+    if (enabled && (instructionChanged || etaChanged)) {
+      unawaited(_announce());
+    }
+  }
+
+  String get _announcement {
+    final distance = widget.instructionDistanceMeters;
+    final distanceText = distance == null
+        ? ''
+        : distance >= 1000
+            ? ' in ${(distance / 1000).toStringAsFixed(1)} kilometres'
+            : ' in $distance metres';
+    final instruction = widget.instruction ?? widget.stage;
+    final eta = widget.etaMinutes == null
+        ? ''
+        : '. About ${widget.etaMinutes} minutes remaining';
+    return '$instruction$distanceText$eta.';
+  }
+
+  Future<void> _announce({bool force = false}) async {
+    if (!enabled && !force) return;
+    lastInstruction = widget.instruction;
+    lastEta = widget.etaMinutes;
+    await speech.stop();
+    await speech.speak(_announcement);
+  }
+
+  Future<void> _toggle() async {
+    setState(() => enabled = !enabled);
+    if (enabled) {
+      await _announce(force: true);
+    } else {
+      await speech.stop();
+    }
+  }
+
+  @override
+  void dispose() {
+    unawaited(speech.stop());
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) => IconButton(
+        tooltip: enabled ? 'Mute voice directions' : 'Turn on voice directions',
+        onPressed: _toggle,
+        icon: Icon(enabled ? Icons.volume_up : Icons.volume_off),
+      );
 }
 
 void _message(BuildContext context, Object value) =>
@@ -1476,6 +1571,13 @@ class _FullScreenCustomerRoute extends StatelessWidget {
                             label: const Text('Cancel ride'),
                           ),
                         ),
+                        _NavigationVoiceButton(
+                          stage: title,
+                          instruction: route?.nextInstruction,
+                          instructionDistanceMeters:
+                              route?.instructionDistanceMeters,
+                          etaMinutes: eta,
+                        ),
                         IconButton(
                           tooltip: 'Trip safety',
                           onPressed: () =>
@@ -2326,11 +2428,20 @@ class _FullScreenDriverRoute extends StatelessWidget {
                               icon: const Icon(Icons.arrow_back),
                               label: const Text('Back'),
                             ),
-                            TextButton.icon(
+                            _NavigationVoiceButton(
+                              stage: travellingToDestination
+                                  ? 'Approaching destination'
+                                  : 'Approaching customer',
+                              instruction: route?.nextInstruction,
+                              instructionDistanceMeters:
+                                  route?.instructionDistanceMeters,
+                              etaMinutes: eta,
+                            ),
+                            IconButton(
+                              tooltip: 'Trip safety',
                               onPressed: () =>
                                   _safetyDialog(context, backend, ride),
                               icon: const Icon(Icons.shield_outlined),
-                              label: const Text('Safety'),
                             ),
                             TextButton.icon(
                               onPressed: () =>

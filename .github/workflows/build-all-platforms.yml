@@ -85,6 +85,8 @@ jobs:
         with:
           channel: stable
           cache: true
+      - name: Install NuGet for Windows plugins
+        uses: NuGet/setup-nuget@v3
       - run: flutter config --enable-windows-desktop
       - run: flutter pub get
       - run: flutter build windows --release

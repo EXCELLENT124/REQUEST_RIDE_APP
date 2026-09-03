@@ -9,11 +9,15 @@ class RouteResult {
     required this.distanceKm,
     required this.durationMinutes,
     required this.points,
+    this.nextInstruction,
+    this.instructionDistanceMeters,
   });
 
   final double distanceKm;
   final int durationMinutes;
   final List<GeoPoint> points;
+  final String? nextInstruction;
+  final int? instructionDistanceMeters;
 }
 
 class MappingService {
@@ -81,7 +85,7 @@ class MappingService {
       {
         'overview': 'full',
         'geometries': 'geojson',
-        'steps': 'false',
+        'steps': 'true',
         'alternatives': 'true',
       },
     );
@@ -100,6 +104,24 @@ class MappingService {
             : shortest);
     final geometry = route['geometry'] as Map<String, dynamic>;
     final coordinatesJson = geometry['coordinates'] as List<dynamic>;
+    final legs = route['legs'] as List<dynamic>? ?? const [];
+    final steps = legs.isEmpty
+        ? const <Map<String, dynamic>>[]
+        : ((legs.first as Map<String, dynamic>)['steps'] as List<dynamic>? ??
+                const [])
+            .map((value) => value as Map<String, dynamic>)
+            .toList();
+    Map<String, dynamic>? nextStep;
+    for (final step in steps) {
+      final maneuver = step['maneuver'];
+      if (maneuver is Map<String, dynamic> &&
+          maneuver['type'] != 'depart' &&
+          (step['distance'] as num? ?? 0).toDouble() > 5) {
+        nextStep = step;
+        break;
+      }
+    }
+    nextStep ??= steps.isEmpty ? null : steps.first;
     return RouteResult(
       distanceKm: (route['distance'] as num).toDouble() / 1000,
       durationMinutes: ((route['duration'] as num).toDouble() / 60).ceil(),
@@ -110,6 +132,31 @@ class MappingService {
           (values[0] as num).toDouble(),
         );
       }).toList(),
+      nextInstruction: nextStep == null ? null : _spokenInstruction(nextStep),
+      instructionDistanceMeters:
+          nextStep == null ? null : (nextStep['distance'] as num).round(),
     );
+  }
+
+  String _spokenInstruction(Map<String, dynamic> step) {
+    final maneuver = step['maneuver'] as Map<String, dynamic>;
+    final type = '${maneuver['type'] ?? 'continue'}';
+    final modifier = '${maneuver['modifier'] ?? ''}'.replaceAll('_', ' ');
+    final road = '${step['name'] ?? ''}'.trim();
+    final roadText = road.isEmpty ? '' : ' onto $road';
+    if (type == 'arrive') return 'You have arrived at your destination';
+    if (type.contains('roundabout')) {
+      final exit = maneuver['exit'];
+      return exit == null
+          ? 'Enter the roundabout$roadText'
+          : 'At the roundabout, take exit $exit$roadText';
+    }
+    if (type == 'turn' || type == 'fork' || type == 'end of road') {
+      return '${type == 'fork' ? 'Keep' : 'Turn'} ${modifier.isEmpty ? 'ahead' : modifier}$roadText';
+    }
+    if (type == 'merge') {
+      return 'Merge ${modifier.isEmpty ? 'ahead' : modifier}$roadText';
+    }
+    return 'Continue${modifier.isEmpty ? '' : ' $modifier'}$roadText';
   }
 }
