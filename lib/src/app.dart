@@ -330,7 +330,7 @@ class RoleHome extends ConsumerWidget {
       UserRole.admin => AdminWorkspace(backend: backend),
     };
     return Scaffold(
-      drawer: _MainMenu(profile: profile, backend: backend),
+      endDrawer: _MainMenu(profile: profile, backend: backend),
       appBar: AppBar(
         title: Row(
           children: [
@@ -347,6 +347,16 @@ class RoleHome extends ConsumerWidget {
           ],
         ),
         actions: [
+          IconButton(
+            tooltip: 'Account and safety settings',
+            onPressed: () => showDialog<void>(
+              context: context,
+              builder: (context) => _AccountSettingsDialog(
+                backend: backend,
+              ),
+            ),
+            icon: const Icon(Icons.manage_accounts),
+          ),
           StreamBuilder<List<Map<String, dynamic>>>(
             stream: backend.notifications(),
             builder: (context, snapshot) {
@@ -366,16 +376,14 @@ class RoleHome extends ConsumerWidget {
               );
             },
           ),
-          IconButton(
-            tooltip: 'Account and safety settings',
-            onPressed: () => showDialog<void>(
-              context: context,
-              builder: (context) => _AccountSettingsDialog(
-                backend: backend,
-              ),
+          Builder(
+            builder: (scaffoldContext) => IconButton(
+              tooltip: 'Open menu',
+              onPressed: () => Scaffold.of(scaffoldContext).openEndDrawer(),
+              icon: const Icon(Icons.menu),
             ),
-            icon: const Icon(Icons.manage_accounts),
           ),
+          const SizedBox(width: 4),
         ],
       ),
       body: BrandedBackdrop(child: content),
