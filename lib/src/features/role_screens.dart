@@ -1328,10 +1328,10 @@ class _FullScreenCustomerRoute extends StatelessWidget {
               ),
               children: [
                 TileLayer(
-                  urlTemplate: approachingDestination
-                      ? 'https://basemaps.cartocdn.com/dark_all/{z}/{x}/{y}@2x.png'
-                      : 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+                  urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
                   userAgentPackageName: 'za.co.requestride.request_ride',
+                  tileBuilder:
+                      approachingDestination ? darkModeTileBuilder : null,
                 ),
                 if (points.isNotEmpty)
                   PolylineLayer(
@@ -1415,7 +1415,7 @@ class _FullScreenCustomerRoute extends StatelessWidget {
                 ),
                 const RichAttributionWidget(
                   attributions: [
-                    TextSourceAttribution('OpenStreetMap · CARTO'),
+                    TextSourceAttribution('OpenStreetMap contributors'),
                   ],
                 ),
               ],
@@ -2165,10 +2165,10 @@ class _FullScreenDriverRoute extends StatelessWidget {
               ),
               children: [
                 TileLayer(
-                  urlTemplate: travellingToDestination
-                      ? 'https://basemaps.cartocdn.com/dark_all/{z}/{x}/{y}@2x.png'
-                      : 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+                  urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
                   userAgentPackageName: 'za.co.requestride.request_ride',
+                  tileBuilder:
+                      travellingToDestination ? darkModeTileBuilder : null,
                 ),
                 if (points.isNotEmpty)
                   PolylineLayer(
@@ -2252,7 +2252,7 @@ class _FullScreenDriverRoute extends StatelessWidget {
                 ),
                 const RichAttributionWidget(
                   attributions: [
-                    TextSourceAttribution('OpenStreetMap · CARTO'),
+                    TextSourceAttribution('OpenStreetMap contributors'),
                   ],
                 ),
               ],
