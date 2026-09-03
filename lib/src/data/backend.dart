@@ -244,6 +244,16 @@ class Backend {
         params: {'p_ride_id': rideId, 'p_reason': reason},
       );
 
+  Future<Map<String, dynamic>?> activeRideContact(String rideId) async {
+    final rows = List<Map<String, dynamic>>.from(
+      await client.rpc(
+        'active_ride_contact',
+        params: {'p_ride_id': rideId},
+      ),
+    );
+    return rows.isEmpty ? null : rows.first;
+  }
+
   Future<void> rateRide(String rideId, int score, String comment) => client.rpc(
         'rate_ride',
         params: {'p_ride_id': rideId, 'p_score': score, 'p_comment': comment},

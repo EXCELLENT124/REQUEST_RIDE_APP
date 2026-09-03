@@ -154,6 +154,88 @@ void _message(BuildContext context, Object value) =>
     ScaffoldMessenger.of(context)
         .showSnackBar(SnackBar(content: Text('$value')));
 
+Future<void> _openContactApp(
+  BuildContext context,
+  String scheme,
+  String phone,
+) async {
+  final uri = scheme == 'sms'
+      ? Uri(
+          scheme: 'sms',
+          path: phone,
+          queryParameters: const {
+            'body': 'Hi, this is about our Request Ride trip.',
+          },
+        )
+      : Uri(scheme: 'tel', path: phone);
+  if (!await launchUrl(uri, mode: LaunchMode.externalApplication) &&
+      context.mounted) {
+    _message(context, 'This device cannot open ${scheme == 'sms' ? 'texts' : 'calls'}.');
+  }
+}
+
+class _RideContactActions extends StatelessWidget {
+  const _RideContactActions({required this.backend, required this.ride});
+
+  final Backend backend;
+  final Ride ride;
+
+  @override
+  Widget build(BuildContext context) => FutureBuilder<Map<String, dynamic>?>(
+        future: backend.activeRideContact(ride.id),
+        builder: (context, snapshot) {
+          if (snapshot.connectionState == ConnectionState.waiting) {
+            return const LinearProgressIndicator();
+          }
+          final contact = snapshot.data;
+          if (contact == null) return const SizedBox.shrink();
+          final name = '${contact['full_name'] ?? 'Ride contact'}';
+          final phone = '${contact['phone'] ?? ''}'.trim();
+          return Padding(
+            padding: const EdgeInsets.only(bottom: 10),
+            child: Row(
+              children: [
+                const CircleAvatar(child: Icon(Icons.person_outline)),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        name,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: Theme.of(context).textTheme.titleSmall,
+                      ),
+                      Text(
+                        phone.isEmpty ? 'Phone number not added' : phone,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ],
+                  ),
+                ),
+                IconButton.filledTonal(
+                  tooltip: 'Call $name',
+                  onPressed: phone.isEmpty
+                      ? null
+                      : () => _openContactApp(context, 'tel', phone),
+                  icon: const Icon(Icons.call_outlined),
+                ),
+                const SizedBox(width: 6),
+                IconButton.filledTonal(
+                  tooltip: 'Text $name',
+                  onPressed: phone.isEmpty
+                      ? null
+                      : () => _openContactApp(context, 'sms', phone),
+                  icon: const Icon(Icons.message_outlined),
+                ),
+              ],
+            ),
+          );
+        },
+      );
+
 Future<void> _cancelRideDialog(
   BuildContext context,
   Backend backend,
@@ -1654,36 +1736,42 @@ class _FullScreenCustomerRoute extends StatelessWidget {
                   color: const Color(0xFF031B1A).withValues(alpha: 0.96),
                   child: Padding(
                     padding: const EdgeInsets.all(12),
-                    child: Row(
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
                       children: [
-                        Expanded(
-                          child: OutlinedButton.icon(
-                            onPressed: onBack,
-                            icon: const Icon(Icons.arrow_back),
-                            label: const Text('Back'),
-                          ),
-                        ),
-                        const SizedBox(width: 8),
-                        Expanded(
-                          child: FilledButton.icon(
-                            onPressed: () =>
-                                _cancelRideDialog(context, backend, ride),
-                            icon: const Icon(Icons.cancel_outlined),
-                            label: const Text('Cancel ride'),
-                          ),
-                        ),
-                        _NavigationVoiceButton(
-                          stage: title,
-                          instruction: route?.nextInstruction,
-                          instructionDistanceMeters:
-                              route?.instructionDistanceMeters,
-                          etaMinutes: eta,
-                        ),
-                        IconButton(
-                          tooltip: 'Trip safety',
-                          onPressed: () =>
-                              _safetyDialog(context, backend, ride),
-                          icon: const Icon(Icons.shield_outlined),
+                        _RideContactActions(backend: backend, ride: ride),
+                        Row(
+                          children: [
+                            Expanded(
+                              child: OutlinedButton.icon(
+                                onPressed: onBack,
+                                icon: const Icon(Icons.arrow_back),
+                                label: const Text('Back'),
+                              ),
+                            ),
+                            const SizedBox(width: 8),
+                            Expanded(
+                              child: FilledButton.icon(
+                                onPressed: () =>
+                                    _cancelRideDialog(context, backend, ride),
+                                icon: const Icon(Icons.cancel_outlined),
+                                label: const Text('Cancel ride'),
+                              ),
+                            ),
+                            _NavigationVoiceButton(
+                              stage: title,
+                              instruction: route?.nextInstruction,
+                              instructionDistanceMeters:
+                                  route?.instructionDistanceMeters,
+                              etaMinutes: eta,
+                            ),
+                            IconButton(
+                              tooltip: 'Trip safety',
+                              onPressed: () =>
+                                  _safetyDialog(context, backend, ride),
+                              icon: const Icon(Icons.shield_outlined),
+                            ),
+                          ],
                         ),
                       ],
                     ),
@@ -2445,6 +2533,7 @@ class _FullScreenDriverRoute extends StatelessWidget {
                     child: Column(
                       mainAxisSize: MainAxisSize.min,
                       children: [
+                        _RideContactActions(backend: backend, ride: ride),
                         if (origin == null)
                           const Padding(
                             padding: EdgeInsets.only(bottom: 10),
