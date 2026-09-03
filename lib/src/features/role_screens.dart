@@ -1050,13 +1050,6 @@ class _CustomerWorkspaceState extends State<CustomerWorkspace> {
                           ride.status == RideStatus.searching ||
                           _isLiveRide(ride.status))
                       .toList();
-                  final history = rides
-                      .where((ride) =>
-                          ride.status == RideStatus.completed ||
-                          ride.status == RideStatus.cancelled)
-                      .toList()
-                    ..sort((a, b) => (b.requestedAt ?? DateTime(1970))
-                        .compareTo(a.requestedAt ?? DateTime(1970)));
                   return Column(
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
@@ -1081,34 +1074,10 @@ class _CustomerWorkspaceState extends State<CustomerWorkspace> {
                                 ),
                         const SizedBox(height: 12),
                       ],
-                      Card(
-                        child: ExpansionTile(
-                          initiallyExpanded: false,
-                          leading: const Icon(Icons.history),
-                          title: const Text('Trip history'),
-                          subtitle: Text(history.isEmpty
-                              ? 'No previous trips yet'
-                              : '${history.length} previous trips · tap to view'),
-                          children: history.isEmpty
-                              ? const [
-                                  ListTile(
-                                    title: Text(
-                                        'Completed and cancelled trips will appear here.'),
-                                  ),
-                                ]
-                              : history
-                                  .map((ride) => _TripSummaryCard(
-                                        backend: widget.backend,
-                                        ride: ride,
-                                      ))
-                                  .toList(),
-                        ),
-                      ),
                     ],
                   );
                 },
               ),
-              _NotificationInbox(backend: widget.backend),
             ],
           );
         },
@@ -1123,6 +1092,138 @@ bool _isLiveRide(RideStatus status) => switch (status) {
         true,
       _ => false,
     };
+
+Future<void> showCustomerTripHistory(
+  BuildContext context,
+  Backend backend,
+) =>
+    showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      showDragHandle: true,
+      builder: (context) => SizedBox(
+        height: MediaQuery.sizeOf(context).height * .78,
+        child: StreamBuilder<List<Ride>>(
+          stream: backend.rides(),
+          builder: (context, snapshot) {
+            final history = (snapshot.data ?? const <Ride>[])
+                .where((ride) =>
+                    ride.status == RideStatus.completed ||
+                    ride.status == RideStatus.cancelled)
+                .toList()
+              ..sort((a, b) => (b.requestedAt ?? DateTime(1970))
+                  .compareTo(a.requestedAt ?? DateTime(1970)));
+            return Scaffold(
+              appBar: AppBar(title: const Text('Trip history')),
+              body: history.isEmpty
+                  ? const Center(
+                      child: Text('Completed and cancelled trips appear here.'),
+                    )
+                  : ListView(
+                      padding: const EdgeInsets.all(16),
+                      children: history
+                          .map((ride) => _TripSummaryCard(
+                                backend: backend,
+                                ride: ride,
+                              ))
+                          .toList(),
+                    ),
+            );
+          },
+        ),
+      ),
+    );
+
+Future<void> showNotificationInbox(
+  BuildContext context,
+  Backend backend,
+) =>
+    showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      showDragHandle: true,
+      builder: (context) => SizedBox(
+        height: MediaQuery.sizeOf(context).height * .78,
+        child: StreamBuilder<List<Map<String, dynamic>>>(
+          stream: backend.notifications(),
+          builder: (context, snapshot) {
+            final notifications = snapshot.data ?? const [];
+            return Scaffold(
+              appBar: AppBar(
+                title: const Text('Notifications'),
+                actions: [
+                  if (notifications.isNotEmpty)
+                    TextButton.icon(
+                      onPressed: () async {
+                        final confirmed = await showDialog<bool>(
+                          context: context,
+                          builder: (context) => AlertDialog(
+                            title: const Text('Clear all notifications?'),
+                            content: const Text(
+                              'This permanently removes every notification in your inbox.',
+                            ),
+                            actions: [
+                              TextButton(
+                                onPressed: () => Navigator.pop(context, false),
+                                child: const Text('Keep notifications'),
+                              ),
+                              FilledButton(
+                                onPressed: () => Navigator.pop(context, true),
+                                child: const Text('Clear all'),
+                              ),
+                            ],
+                          ),
+                        );
+                        if (confirmed != true) return;
+                        try {
+                          await backend.clearNotifications();
+                          if (context.mounted) {
+                            _message(context, 'Notifications cleared');
+                          }
+                        } catch (error) {
+                          if (context.mounted) _message(context, error);
+                        }
+                      },
+                      icon: const Icon(Icons.delete_sweep_outlined),
+                      label: const Text('Clear all'),
+                    ),
+                ],
+              ),
+              body: notifications.isEmpty
+                  ? const Center(child: Text('No notifications'))
+                  : ListView.separated(
+                      padding: const EdgeInsets.all(16),
+                      itemCount: notifications.length,
+                      separatorBuilder: (_, __) => const Divider(height: 1),
+                      itemBuilder: (context, index) {
+                        final notification = notifications[index];
+                        final unread = notification['read_at'] == null;
+                        return ListTile(
+                          leading: Icon(unread
+                              ? Icons.notifications_active
+                              : Icons.notifications_none),
+                          title: Text('${notification['title']}'),
+                          subtitle: Text('${notification['body']}'),
+                          onTap: unread
+                              ? () => backend.markNotificationRead(
+                                    notification['id'] as String,
+                                  )
+                              : null,
+                          trailing: IconButton(
+                            tooltip: 'Delete notification',
+                            onPressed: () => backend.deleteNotification(
+                              notification['id'] as String,
+                            ),
+                            icon: const Icon(Icons.delete_outline),
+                          ),
+                        );
+                      },
+                    ),
+            );
+          },
+        ),
+      ),
+    );
 
 String _rideStatusLabel(RideStatus status) => switch (status) {
       RideStatus.searching => 'Finding a driver',
@@ -2046,46 +2147,6 @@ class _DriverWorkspaceState extends State<DriverWorkspace> {
       ],
     );
   }
-}
-
-class _NotificationInbox extends StatelessWidget {
-  const _NotificationInbox({required this.backend});
-  final Backend backend;
-
-  @override
-  Widget build(BuildContext context) =>
-      StreamBuilder<List<Map<String, dynamic>>>(
-        stream: backend.notifications(),
-        builder: (context, snapshot) {
-          final unread = (snapshot.data ?? const [])
-              .where((notification) => notification['read_at'] == null)
-              .toList();
-          if (unread.isEmpty) return const SizedBox.shrink();
-          return Card(
-            child: ExpansionTile(
-              leading: Badge(
-                label: Text('${unread.length}'),
-                child: const Icon(Icons.notifications_active),
-              ),
-              title: const Text('New notifications'),
-              children: unread
-                  .take(5)
-                  .map((notification) => ListTile(
-                        title: Text('${notification['title']}'),
-                        subtitle: Text('${notification['body']}'),
-                        trailing: IconButton(
-                          tooltip: 'Mark as read',
-                          onPressed: () => backend.markNotificationRead(
-                            notification['id'] as String,
-                          ),
-                          icon: const Icon(Icons.done),
-                        ),
-                      ))
-                  .toList(),
-            ),
-          );
-        },
-      );
 }
 
 class _DriverRequestCard extends StatelessWidget {

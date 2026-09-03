@@ -433,6 +433,15 @@ class Backend {
       .from('notifications')
       .update({'read_at': DateTime.now().toIso8601String()}).eq('id', id);
 
+  Future<void> deleteNotification(String id) =>
+      client.from('notifications').delete().eq('id', id);
+
+  Future<void> clearNotifications() async {
+    final userId = client.auth.currentUser?.id;
+    if (userId == null) throw StateError('You are not signed in.');
+    await client.from('notifications').delete().eq('user_id', userId);
+  }
+
   static String _status(RideStatus status) => status.name.replaceAllMapped(
         RegExp(r'[A-Z]'),
         (match) => '_${match.group(0)!.toLowerCase()}',

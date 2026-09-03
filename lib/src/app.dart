@@ -323,13 +323,14 @@ class RoleHome extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final backend = ref.read(backendProvider)!;
     final content = switch (profile.role) {
-      UserRole.customer =>
-        CustomerWorkspace(backend: ref.read(backendProvider)!),
-      UserRole.driver => DriverWorkspace(backend: ref.read(backendProvider)!),
-      UserRole.admin => AdminWorkspace(backend: ref.read(backendProvider)!),
+      UserRole.customer => CustomerWorkspace(backend: backend),
+      UserRole.driver => DriverWorkspace(backend: backend),
+      UserRole.admin => AdminWorkspace(backend: backend),
     };
     return Scaffold(
+      drawer: _MainMenu(profile: profile, backend: backend),
       appBar: AppBar(
         title: Row(
           children: [
@@ -346,25 +347,159 @@ class RoleHome extends ConsumerWidget {
           ],
         ),
         actions: [
+          StreamBuilder<List<Map<String, dynamic>>>(
+            stream: backend.notifications(),
+            builder: (context, snapshot) {
+              final unread = (snapshot.data ?? const [])
+                  .where((item) => item['read_at'] == null)
+                  .length;
+              return IconButton(
+                tooltip: 'Notifications',
+                onPressed: () => showNotificationInbox(context, backend),
+                icon: Badge(
+                  isLabelVisible: unread > 0,
+                  label: Text(unread > 99 ? '99+' : '$unread'),
+                  child: Icon(unread > 0
+                      ? Icons.notifications_active
+                      : Icons.notifications_none),
+                ),
+              );
+            },
+          ),
           IconButton(
             tooltip: 'Account and safety settings',
             onPressed: () => showDialog<void>(
               context: context,
               builder: (context) => _AccountSettingsDialog(
-                backend: ref.read(backendProvider)!,
+                backend: backend,
               ),
             ),
             icon: const Icon(Icons.manage_accounts),
-          ),
-          IconButton(
-            onPressed: () => ref.read(backendProvider)!.signOut(),
-            icon: const Icon(Icons.logout),
           ),
         ],
       ),
       body: BrandedBackdrop(child: content),
     );
   }
+}
+
+class _MainMenu extends StatelessWidget {
+  const _MainMenu({required this.profile, required this.backend});
+
+  final Profile profile;
+  final Backend backend;
+
+  void _closeThen(BuildContext context, VoidCallback action) {
+    Navigator.pop(context);
+    action();
+  }
+
+  @override
+  Widget build(BuildContext context) => Drawer(
+        child: SafeArea(
+          child: Column(
+            children: [
+              ListTile(
+                leading: ClipRRect(
+                  borderRadius: BorderRadius.circular(10),
+                  child: Image.asset(
+                    'assets/branding/request_ride_icon.png',
+                    width: 42,
+                    height: 42,
+                  ),
+                ),
+                title: Text(profile.fullName),
+                subtitle: Text(profile.role.name),
+              ),
+              const Divider(),
+              Expanded(
+                child: ListView(
+                  padding: EdgeInsets.zero,
+                  children: [
+                    if (profile.role == UserRole.customer)
+                      ListTile(
+                        leading: const Icon(Icons.history),
+                        title: const Text('Trip history'),
+                        subtitle: const Text('Completed and cancelled rides'),
+                        onTap: () => _closeThen(
+                          context,
+                          () => showCustomerTripHistory(context, backend),
+                        ),
+                      ),
+                    ListTile(
+                      leading: const Icon(Icons.notifications_outlined),
+                      title: const Text('Notifications'),
+                      onTap: () => _closeThen(
+                        context,
+                        () => showNotificationInbox(context, backend),
+                      ),
+                    ),
+                    if (profile.role == UserRole.customer)
+                      ListTile(
+                        leading:
+                            const Icon(Icons.account_balance_wallet_outlined),
+                        title: const Text('Payment methods'),
+                        subtitle: const Text('Cash and card preferences'),
+                        onTap: () => _closeThen(
+                          context,
+                          () => showDialog<void>(
+                            context: context,
+                            builder: (context) => const AlertDialog(
+                              title: Text('Payment methods'),
+                              content: Text(
+                                'Cash is available. Card payments become available when the secure payment provider is connected.',
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+                    ListTile(
+                      leading: const Icon(Icons.shield_outlined),
+                      title: const Text('Account and safety'),
+                      subtitle:
+                          const Text('Profile, emergency contact and password'),
+                      onTap: () => _closeThen(
+                        context,
+                        () => showDialog<void>(
+                          context: context,
+                          builder: (context) =>
+                              _AccountSettingsDialog(backend: backend),
+                        ),
+                      ),
+                    ),
+                    ListTile(
+                      leading: const Icon(Icons.help_outline),
+                      title: const Text('Help and support'),
+                      subtitle: const Text('Ride help and safety information'),
+                      onTap: () => _closeThen(
+                        context,
+                        () => showDialog<void>(
+                          context: context,
+                          builder: (context) => const AlertDialog(
+                            title: Text('Help and support'),
+                            content: Text(
+                              'For an active ride, use the safety shield on the trip screen. In an emergency, contact local emergency services immediately.',
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const Divider(height: 1),
+              ListTile(
+                leading: const Icon(Icons.logout),
+                title: const Text('Log out'),
+                onTap: () async {
+                  Navigator.pop(context);
+                  await backend.signOut();
+                },
+              ),
+            ],
+          ),
+        ),
+      );
 }
 
 class _AccountSettingsDialog extends StatefulWidget {
