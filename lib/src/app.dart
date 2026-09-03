@@ -1,3 +1,4 @@
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
@@ -347,16 +348,6 @@ class RoleHome extends ConsumerWidget {
           ],
         ),
         actions: [
-          IconButton(
-            tooltip: 'Account and safety settings',
-            onPressed: () => showDialog<void>(
-              context: context,
-              builder: (context) => _AccountSettingsDialog(
-                backend: backend,
-              ),
-            ),
-            icon: const Icon(Icons.manage_accounts),
-          ),
           StreamBuilder<List<Map<String, dynamic>>>(
             stream: backend.notifications(),
             builder: (context, snapshot) {
@@ -408,12 +399,15 @@ class _MainMenu extends StatelessWidget {
           child: Column(
             children: [
               ListTile(
-                leading: ClipRRect(
-                  borderRadius: BorderRadius.circular(10),
-                  child: Image.asset(
-                    'assets/branding/request_ride_icon.png',
-                    width: 42,
-                    height: 42,
+                leading: FutureBuilder<String?>(
+                  future: backend.getProfilePhotoUrl(),
+                  builder: (context, snapshot) => CircleAvatar(
+                    backgroundImage: snapshot.data == null
+                        ? null
+                        : NetworkImage(snapshot.data!),
+                    child: snapshot.data == null
+                        ? const Icon(Icons.person_outline)
+                        : null,
                   ),
                 ),
                 title: Text(profile.fullName),
@@ -442,6 +436,19 @@ class _MainMenu extends StatelessWidget {
                         () => showNotificationInbox(context, backend),
                       ),
                     ),
+                    ListTile(
+                      leading: const Icon(Icons.settings_outlined),
+                      title: const Text('General settings'),
+                      subtitle: const Text('Navigation, location and alerts'),
+                      onTap: () => _closeThen(
+                        context,
+                        () => showDialog<void>(
+                          context: context,
+                          builder: (context) =>
+                              _GeneralSettingsDialog(backend: backend),
+                        ),
+                      ),
+                    ),
                     if (profile.role == UserRole.customer)
                       ListTile(
                         leading:
@@ -462,10 +469,10 @@ class _MainMenu extends StatelessWidget {
                         ),
                       ),
                     ListTile(
-                      leading: const Icon(Icons.shield_outlined),
-                      title: const Text('Account and safety'),
+                      leading: const Icon(Icons.manage_accounts_outlined),
+                      title: const Text('Edit profile'),
                       subtitle:
-                          const Text('Profile, emergency contact and password'),
+                          const Text('Photo, personal details and password'),
                       onTap: () => _closeThen(
                         context,
                         () => showDialog<void>(
@@ -518,6 +525,51 @@ class _AccountSettingsDialog extends StatefulWidget {
   State<_AccountSettingsDialog> createState() => _AccountSettingsDialogState();
 }
 
+class _GeneralSettingsDialog extends StatelessWidget {
+  const _GeneralSettingsDialog({required this.backend});
+
+  final Backend backend;
+
+  @override
+  Widget build(BuildContext context) => AlertDialog(
+        title: const Text('General settings'),
+        content: SizedBox(
+          width: 520,
+          child: ListView(
+            shrinkWrap: true,
+            children: [
+              const ListTile(
+                leading: Icon(Icons.volume_up_outlined),
+                title: Text('Voice navigation'),
+                subtitle: Text(
+                  'Use the speaker button on the active navigation map to switch spoken directions on or off.',
+                ),
+              ),
+              const ListTile(
+                leading: Icon(Icons.location_on_outlined),
+                title: Text('Location services'),
+                subtitle: Text(
+                  'Location permission is requested when GPS or live driver tracking is used.',
+                ),
+              ),
+              ListTile(
+                leading: const Icon(Icons.notifications_outlined),
+                title: const Text('Notification inbox'),
+                subtitle: const Text('Review or clear ride alerts'),
+                onTap: () => showNotificationInbox(context, backend),
+              ),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Close'),
+          ),
+        ],
+      );
+}
+
 class _AccountSettingsDialogState extends State<_AccountSettingsDialog> {
   final name = TextEditingController();
   final phone = TextEditingController();
@@ -527,6 +579,8 @@ class _AccountSettingsDialogState extends State<_AccountSettingsDialog> {
   var consent = false;
   var loading = true;
   var busy = false;
+  var uploadingPhoto = false;
+  String? avatarUrl;
 
   @override
   void initState() {
@@ -545,6 +599,39 @@ class _AccountSettingsDialogState extends State<_AccountSettingsDialog> {
       consent = profile['privacy_consent_at'] != null;
       loading = false;
     });
+    final photoUrl = await widget.backend.getProfilePhotoUrl();
+    if (mounted) setState(() => avatarUrl = photoUrl);
+  }
+
+  Future<void> chooseProfilePhoto() async {
+    final result = await FilePicker.platform.pickFiles(
+      type: FileType.custom,
+      allowedExtensions: const ['jpg', 'jpeg', 'png', 'webp'],
+      withData: true,
+    );
+    if (result == null) return;
+    final file = result.files.single;
+    final bytes = file.bytes;
+    if (bytes == null) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Could not read the selected image.')),
+        );
+      }
+      return;
+    }
+    setState(() => uploadingPhoto = true);
+    try {
+      final url = await widget.backend.uploadProfilePhoto(bytes, file.name);
+      if (mounted) setState(() => avatarUrl = url);
+    } catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text('$error')));
+      }
+    } finally {
+      if (mounted) setState(() => uploadingPhoto = false);
+    }
   }
 
   Future<void> save() async {
@@ -614,7 +701,7 @@ class _AccountSettingsDialogState extends State<_AccountSettingsDialog> {
 
   @override
   Widget build(BuildContext context) => AlertDialog(
-        title: const Text('Account and safety settings'),
+        title: const Text('Edit profile'),
         content: SizedBox(
           width: 560,
           child: loading
@@ -622,6 +709,38 @@ class _AccountSettingsDialogState extends State<_AccountSettingsDialog> {
               : ListView(
                   shrinkWrap: true,
                   children: [
+                    Center(
+                      child: Stack(
+                        alignment: Alignment.bottomRight,
+                        children: [
+                          CircleAvatar(
+                            radius: 48,
+                            backgroundImage: avatarUrl == null
+                                ? null
+                                : NetworkImage(avatarUrl!),
+                            child: avatarUrl == null
+                                ? const Icon(Icons.person, size: 48)
+                                : null,
+                          ),
+                          IconButton.filled(
+                            tooltip: avatarUrl == null
+                                ? 'Add profile photo'
+                                : 'Update profile photo',
+                            onPressed:
+                                uploadingPhoto ? null : chooseProfilePhoto,
+                            icon: uploadingPhoto
+                                ? const SizedBox.square(
+                                    dimension: 18,
+                                    child: CircularProgressIndicator(
+                                      strokeWidth: 2,
+                                    ),
+                                  )
+                                : const Icon(Icons.camera_alt_outlined),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 16),
                     TextField(
                         controller: name,
                         decoration:

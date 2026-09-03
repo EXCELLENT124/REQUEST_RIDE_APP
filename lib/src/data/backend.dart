@@ -57,6 +57,56 @@ class Backend {
     );
   }
 
+  Future<String?> getProfilePhotoUrl() async {
+    final details = await getProfileDetails();
+    final path = details['avatar_path'] as String?;
+    if (path == null || path.isEmpty) return null;
+    return client.storage
+        .from('profile-photos')
+        .createSignedUrl(path, 60 * 60);
+  }
+
+  Future<String> uploadProfilePhoto(Uint8List bytes, String fileName) async {
+    final user = currentUser;
+    if (user == null) throw StateError('You are not signed in.');
+    if (bytes.length > 5 * 1024 * 1024) {
+      throw ArgumentError('Profile photo must be 5 MB or smaller.');
+    }
+    final rawExtension = fileName.split('.').last.toLowerCase();
+    final extension = switch (rawExtension) {
+      'jpg' || 'jpeg' => 'jpg',
+      'png' => 'png',
+      'webp' => 'webp',
+      _ => throw ArgumentError('Choose a JPG, PNG or WebP image.'),
+    };
+    final contentType = switch (extension) {
+      'jpg' => 'image/jpeg',
+      'png' => 'image/png',
+      _ => 'image/webp',
+    };
+    final previous = await getProfileDetails();
+    final previousPath = previous['avatar_path'] as String?;
+    final path = '${user.id}/profile.$extension';
+    await client.storage.from('profile-photos').uploadBinary(
+          path,
+          bytes,
+          fileOptions: FileOptions(
+            upsert: true,
+            contentType: contentType,
+            cacheControl: '3600',
+          ),
+        );
+    await client
+        .from('profiles')
+        .update({'avatar_path': path}).eq('id', user.id);
+    if (previousPath != null && previousPath != path) {
+      await client.storage.from('profile-photos').remove([previousPath]);
+    }
+    return client.storage
+        .from('profile-photos')
+        .createSignedUrl(path, 60 * 60);
+  }
+
   Future<void> updateProfile({
     required String fullName,
     required String phone,
