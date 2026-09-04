@@ -235,6 +235,7 @@ class _RideContactActions extends StatelessWidget {
           );
         },
       );
+}
 
 Future<void> _cancelRideDialog(
   BuildContext context,
