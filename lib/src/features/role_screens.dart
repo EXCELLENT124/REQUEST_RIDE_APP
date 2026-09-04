@@ -170,7 +170,8 @@ Future<void> _openContactApp(
       : Uri(scheme: 'tel', path: phone);
   if (!await launchUrl(uri, mode: LaunchMode.externalApplication) &&
       context.mounted) {
-    _message(context, 'This device cannot open ${scheme == 'sms' ? 'texts' : 'calls'}.');
+    _message(context,
+        'This device cannot open ${scheme == 'sms' ? 'texts' : 'calls'}.');
   }
 }
 
@@ -1555,7 +1556,7 @@ class _CustomerNavigationScreen extends StatelessWidget {
       );
 }
 
-class _FullScreenCustomerRoute extends StatelessWidget {
+class _FullScreenCustomerRoute extends StatefulWidget {
   const _FullScreenCustomerRoute({
     required this.backend,
     required this.ride,
@@ -1575,8 +1576,35 @@ class _FullScreenCustomerRoute extends StatelessWidget {
   final VoidCallback onBack;
 
   @override
+  State<_FullScreenCustomerRoute> createState() =>
+      _FullScreenCustomerRouteState();
+}
+
+class _FullScreenCustomerRouteState extends State<_FullScreenCustomerRoute> {
+  final MapController mapController = MapController();
+
+  @override
+  void didUpdateWidget(covariant _FullScreenCustomerRoute oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    final driver = widget.driver;
+    if (driver != null &&
+        (oldWidget.driver?.latitude != driver.latitude ||
+            oldWidget.driver?.longitude != driver.longitude)) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) {
+          mapController.move(
+            map.LatLng(driver.latitude, driver.longitude),
+            mapController.camera.zoom,
+          );
+        }
+      });
+    }
+  }
+
+  @override
   Widget build(BuildContext context) {
-    final origin = driver;
+    final origin = widget.driver;
+    final target = widget.target;
     final directDistance = origin == null ? null : _distanceKm(origin, target);
     return FutureBuilder<RouteResult>(
       future: origin == null ? null : MappingService().route(origin, target),
@@ -1595,16 +1623,14 @@ class _FullScreenCustomerRoute extends StatelessWidget {
             (distance == null
                 ? null
                 : math.max(1, (distance / 30 * 60).round()));
-        final title = approachingDestination
+        final title = widget.approachingDestination
             ? 'Approaching destination'
             : 'Driver approaching you';
         return Stack(
           fit: StackFit.expand,
           children: [
             FlutterMap(
-              key: ValueKey(
-                '${ride.id}-${ride.status.name}-${origin?.latitude}-${origin?.longitude}',
-              ),
+              mapController: mapController,
               options: MapOptions(
                 initialCenter: map.LatLng(centre.latitude, centre.longitude),
                 initialZoom: _trackingZoom(directDistance),
@@ -1613,13 +1639,14 @@ class _FullScreenCustomerRoute extends StatelessWidget {
                 TileLayer(
                   urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
                   userAgentPackageName: 'za.co.requestride.request_ride',
-                  tileBuilder:
-                      approachingDestination ? darkModeTileBuilder : null,
+                  tileBuilder: widget.approachingDestination
+                      ? darkModeTileBuilder
+                      : null,
                 ),
                 if (points.isNotEmpty)
                   PolylineLayer(
                     polylines: [
-                      if (approachingDestination)
+                      if (widget.approachingDestination)
                         Polyline(
                           points: points
                               .map((point) => map.LatLng(
@@ -1637,8 +1664,8 @@ class _FullScreenCustomerRoute extends StatelessWidget {
                                   point.longitude,
                                 ))
                             .toList(),
-                        strokeWidth: approachingDestination ? 8 : 7,
-                        color: approachingDestination
+                        strokeWidth: widget.approachingDestination ? 8 : 7,
+                        color: widget.approachingDestination
                             ? const Color(0xFF00D7FF)
                             : const Color(0xFF00D69A),
                       ),
@@ -1652,14 +1679,14 @@ class _FullScreenCustomerRoute extends StatelessWidget {
                         width: 58,
                         height: 58,
                         child: Transform.rotate(
-                          angle: approachingDestination
-                              ? (driverHeading == null
+                          angle: widget.approachingDestination
+                              ? (widget.driverHeading == null
                                   ? _routeBearingRadians(points)
-                                  : driverHeading! * math.pi / 180)
+                                  : widget.driverHeading! * math.pi / 180)
                               : 0,
                           child: DecoratedBox(
                             decoration: BoxDecoration(
-                              color: approachingDestination
+                              color: widget.approachingDestination
                                   ? const Color(0xFF0077FF)
                                   : const Color(0xFF031B1A),
                               shape: BoxShape.circle,
@@ -1674,7 +1701,7 @@ class _FullScreenCustomerRoute extends StatelessWidget {
                             child: Padding(
                               padding: const EdgeInsets.all(7),
                               child: Icon(
-                                approachingDestination
+                                widget.approachingDestination
                                     ? Icons.navigation
                                     : Icons.local_taxi,
                                 color: Colors.white,
@@ -1687,10 +1714,10 @@ class _FullScreenCustomerRoute extends StatelessWidget {
                     Marker(
                       point: map.LatLng(target.latitude, target.longitude),
                       child: Icon(
-                        approachingDestination
+                        widget.approachingDestination
                             ? Icons.flag_circle
                             : Icons.person_pin_circle,
-                        color: approachingDestination
+                        color: widget.approachingDestination
                             ? const Color(0xFFFF5E5B)
                             : const Color(0xFFFFC857),
                         size: 48,
@@ -1716,7 +1743,7 @@ class _FullScreenCustomerRoute extends StatelessWidget {
                   child: ListTile(
                     leading: IconButton(
                       tooltip: 'Back',
-                      onPressed: onBack,
+                      onPressed: widget.onBack,
                       icon: const Icon(Icons.arrow_back),
                     ),
                     title: Text(title),
@@ -1746,12 +1773,15 @@ class _FullScreenCustomerRoute extends StatelessWidget {
                     child: Column(
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        _RideContactActions(backend: backend, ride: ride),
+                        _RideContactActions(
+                          backend: widget.backend,
+                          ride: widget.ride,
+                        ),
                         Row(
                           children: [
                             Expanded(
                               child: OutlinedButton.icon(
-                                onPressed: onBack,
+                                onPressed: widget.onBack,
                                 icon: const Icon(Icons.arrow_back),
                                 label: const Text('Back'),
                               ),
@@ -1759,8 +1789,11 @@ class _FullScreenCustomerRoute extends StatelessWidget {
                             const SizedBox(width: 8),
                             Expanded(
                               child: FilledButton.icon(
-                                onPressed: () =>
-                                    _cancelRideDialog(context, backend, ride),
+                                onPressed: () => _cancelRideDialog(
+                                  context,
+                                  widget.backend,
+                                  widget.ride,
+                                ),
                                 icon: const Icon(Icons.cancel_outlined),
                                 label: const Text('Cancel ride'),
                               ),
@@ -1774,8 +1807,11 @@ class _FullScreenCustomerRoute extends StatelessWidget {
                             ),
                             IconButton(
                               tooltip: 'Trip safety',
-                              onPressed: () =>
-                                  _safetyDialog(context, backend, ride),
+                              onPressed: () => _safetyDialog(
+                                context,
+                                widget.backend,
+                                widget.ride,
+                              ),
                               icon: const Icon(Icons.shield_outlined),
                             ),
                           ],
@@ -1860,10 +1896,14 @@ class _DriverWorkspaceState extends State<DriverWorkspace> {
     refresh();
     rideUpdates = widget.backend.rides().listen((rides) {
       final userId = widget.backend.currentUser?.id;
-      activeRideId = rides
+      final rideId = rides
           .where((ride) => ride.driverId == userId && _isLiveRide(ride.status))
           .map((ride) => ride.id)
           .firstOrNull;
+      activeRideId = rideId;
+      if (rideId != null && positionUpdates == null) {
+        unawaited(_resumeActiveRideTracking(rideId));
+      }
     });
   }
 
@@ -1917,10 +1957,20 @@ class _DriverWorkspaceState extends State<DriverWorkspace> {
       lastLocation = point;
       await widget.backend.setDriverOnline(true, point);
       if (mounted) setState(() => online = true);
+      _startPositionUpdates();
+    } catch (error) {
+      if (mounted) _message(context, error);
+    } finally {
+      if (mounted) setState(() => changingAvailability = false);
+    }
+  }
 
-      positionUpdates = Geolocator.getPositionStream(
-        locationSettings: _driverLocationSettings(),
-      ).listen((position) {
+  void _startPositionUpdates() {
+    if (positionUpdates != null) return;
+    positionUpdates = Geolocator.getPositionStream(
+      locationSettings: _driverLocationSettings(),
+    ).listen(
+      (position) {
         final updated = GeoPoint(position.latitude, position.longitude);
         final heading = position.heading >= 0 ? position.heading : null;
         final speed = position.speed >= 0 ? position.speed : null;
@@ -1941,22 +1991,68 @@ class _DriverWorkspaceState extends State<DriverWorkspace> {
           heading: heading,
           speedMps: speed,
         ));
-      });
-      locationHeartbeat = Timer.periodic(const Duration(seconds: 30), (_) {
-        final current = lastLocation;
-        if (current != null && online) {
-          unawaited(widget.backend.updateDriverLocation(
-            current,
-            rideId: activeRideId,
-            heading: lastHeading,
-            speedMps: lastSpeedMps,
-          ));
+      },
+      onError: (Object error) {
+        positionUpdates = null;
+        if (mounted) _message(context, 'Live location stopped: $error');
+      },
+    );
+    locationHeartbeat?.cancel();
+    locationHeartbeat = Timer.periodic(const Duration(seconds: 15), (_) async {
+      if (activeRideId == null) return;
+      try {
+        final position = await Geolocator.getCurrentPosition(
+          locationSettings: _driverLocationSettings(),
+        );
+        final current = GeoPoint(position.latitude, position.longitude);
+        if (mounted) {
+          setState(() {
+            lastLocation = current;
+            lastHeading = position.heading >= 0 ? position.heading : null;
+            lastSpeedMps = position.speed >= 0 ? position.speed : null;
+          });
         }
-      });
+        await widget.backend.updateDriverLocation(
+          current,
+          rideId: activeRideId,
+          heading: lastHeading,
+          speedMps: lastSpeedMps,
+        );
+      } catch (error) {
+        if (mounted) {
+          _message(context, 'Could not refresh live location: $error');
+        }
+      }
+    });
+  }
+
+  Future<void> _resumeActiveRideTracking(String rideId) async {
+    try {
+      final position = await Geolocator.getCurrentPosition(
+        locationSettings: _driverLocationSettings(),
+      );
+      final point = GeoPoint(position.latitude, position.longitude);
+      activeRideId = rideId;
+      await widget.backend.setDriverOnline(true, point);
+      if (mounted) {
+        setState(() {
+          online = true;
+          lastLocation = point;
+          lastHeading = position.heading >= 0 ? position.heading : null;
+          lastSpeedMps = position.speed >= 0 ? position.speed : null;
+        });
+      }
+      await widget.backend.updateDriverLocation(
+        point,
+        rideId: rideId,
+        heading: lastHeading,
+        speedMps: lastSpeedMps,
+      );
+      _startPositionUpdates();
     } catch (error) {
-      if (mounted) _message(context, error);
-    } finally {
-      if (mounted) setState(() => changingAvailability = false);
+      if (mounted) {
+        _message(context, 'Enable location to resume this trip: $error');
+      }
     }
   }
 
@@ -2363,7 +2459,7 @@ class _DriverNavigationScreen extends StatelessWidget {
       );
 }
 
-class _FullScreenDriverRoute extends StatelessWidget {
+class _FullScreenDriverRoute extends StatefulWidget {
   const _FullScreenDriverRoute({
     required this.backend,
     required this.ride,
@@ -2384,13 +2480,41 @@ class _FullScreenDriverRoute extends StatelessWidget {
   final RideStatus? next;
   final VoidCallback onBack;
 
+  @override
+  State<_FullScreenDriverRoute> createState() => _FullScreenDriverRouteState();
+}
+
+class _FullScreenDriverRouteState extends State<_FullScreenDriverRoute> {
+  final MapController mapController = MapController();
+
+  @override
+  void didUpdateWidget(covariant _FullScreenDriverRoute oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    final driver = widget.driver;
+    if (driver != null &&
+        (oldWidget.driver?.latitude != driver.latitude ||
+            oldWidget.driver?.longitude != driver.longitude)) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) {
+          mapController.move(
+            map.LatLng(driver.latitude, driver.longitude),
+            mapController.camera.zoom,
+          );
+        }
+      });
+    }
+  }
+
   Future<void> _advance(BuildContext context) async {
-    final nextStatus = next;
+    final nextStatus = widget.next;
     if (nextStatus == null) return;
     try {
       final point = await _currentPoint();
-      await backend.updateDriverLocation(point, rideId: ride.id);
-      await backend.transitionRide(ride.id, nextStatus);
+      await widget.backend.updateDriverLocation(
+        point,
+        rideId: widget.ride.id,
+      );
+      await widget.backend.transitionRide(widget.ride.id, nextStatus);
     } catch (error) {
       if (context.mounted) _message(context, error);
     }
@@ -2398,7 +2522,8 @@ class _FullScreenDriverRoute extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final origin = driver;
+    final origin = widget.driver;
+    final target = widget.target;
     final directDistance = origin == null ? null : _distanceKm(origin, target);
     return FutureBuilder<RouteResult>(
       future: origin == null ? null : MappingService().route(origin, target),
@@ -2421,9 +2546,7 @@ class _FullScreenDriverRoute extends StatelessWidget {
           fit: StackFit.expand,
           children: [
             FlutterMap(
-              key: ValueKey(
-                '${ride.id}-${ride.status.name}-${origin?.latitude}-${origin?.longitude}',
-              ),
+              mapController: mapController,
               options: MapOptions(
                 initialCenter: map.LatLng(centre.latitude, centre.longitude),
                 initialZoom: _trackingZoom(directDistance),
@@ -2432,13 +2555,14 @@ class _FullScreenDriverRoute extends StatelessWidget {
                 TileLayer(
                   urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
                   userAgentPackageName: 'za.co.requestride.request_ride',
-                  tileBuilder:
-                      travellingToDestination ? darkModeTileBuilder : null,
+                  tileBuilder: widget.travellingToDestination
+                      ? darkModeTileBuilder
+                      : null,
                 ),
                 if (points.isNotEmpty)
                   PolylineLayer(
                     polylines: [
-                      if (travellingToDestination)
+                      if (widget.travellingToDestination)
                         Polyline(
                           points: points
                               .map((point) => map.LatLng(
@@ -2456,8 +2580,8 @@ class _FullScreenDriverRoute extends StatelessWidget {
                                   point.longitude,
                                 ))
                             .toList(),
-                        strokeWidth: travellingToDestination ? 8 : 7,
-                        color: travellingToDestination
+                        strokeWidth: widget.travellingToDestination ? 8 : 7,
+                        color: widget.travellingToDestination
                             ? const Color(0xFF00D7FF)
                             : const Color(0xFF00D69A),
                       ),
@@ -2471,14 +2595,14 @@ class _FullScreenDriverRoute extends StatelessWidget {
                         width: 58,
                         height: 58,
                         child: Transform.rotate(
-                          angle: travellingToDestination
-                              ? (driverHeading == null
+                          angle: widget.travellingToDestination
+                              ? (widget.driverHeading == null
                                   ? _routeBearingRadians(points)
-                                  : driverHeading! * math.pi / 180)
+                                  : widget.driverHeading! * math.pi / 180)
                               : 0,
                           child: DecoratedBox(
                             decoration: BoxDecoration(
-                              color: travellingToDestination
+                              color: widget.travellingToDestination
                                   ? const Color(0xFF0077FF)
                                   : const Color(0xFF031B1A),
                               shape: BoxShape.circle,
@@ -2493,7 +2617,7 @@ class _FullScreenDriverRoute extends StatelessWidget {
                             child: Padding(
                               padding: const EdgeInsets.all(7),
                               child: Icon(
-                                travellingToDestination
+                                widget.travellingToDestination
                                     ? Icons.navigation
                                     : Icons.local_taxi,
                                 color: Colors.white,
@@ -2506,10 +2630,10 @@ class _FullScreenDriverRoute extends StatelessWidget {
                     Marker(
                       point: map.LatLng(target.latitude, target.longitude),
                       child: Icon(
-                        travellingToDestination
+                        widget.travellingToDestination
                             ? Icons.flag_circle
                             : Icons.person_pin_circle,
-                        color: travellingToDestination
+                        color: widget.travellingToDestination
                             ? const Color(0xFFFF5E5B)
                             : const Color(0xFFFFC857),
                         size: 48,
@@ -2535,10 +2659,10 @@ class _FullScreenDriverRoute extends StatelessWidget {
                   child: ListTile(
                     leading: IconButton(
                       tooltip: 'Back',
-                      onPressed: onBack,
+                      onPressed: widget.onBack,
                       icon: const Icon(Icons.arrow_back),
                     ),
-                    title: Text(travellingToDestination
+                    title: Text(widget.travellingToDestination
                         ? 'Approaching destination'
                         : 'Approaching customer'),
                     subtitle: Text(
@@ -2571,31 +2695,34 @@ class _FullScreenDriverRoute extends StatelessWidget {
                     child: Column(
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        _RideContactActions(backend: backend, ride: ride),
+                        _RideContactActions(
+                          backend: widget.backend,
+                          ride: widget.ride,
+                        ),
                         if (origin == null)
                           const Padding(
                             padding: EdgeInsets.only(bottom: 10),
                             child: LinearProgressIndicator(),
                           ),
-                        if (next != null)
+                        if (widget.next != null)
                           SizedBox(
                             width: double.infinity,
                             child: FilledButton.icon(
                               onPressed: () => _advance(context),
-                              icon: Icon(_nextStatusIcon(next!)),
-                              label: Text(_nextStatusLabel(next!)),
+                              icon: Icon(_nextStatusIcon(widget.next!)),
+                              label: Text(_nextStatusLabel(widget.next!)),
                             ),
                           ),
                         Row(
                           mainAxisAlignment: MainAxisAlignment.center,
                           children: [
                             TextButton.icon(
-                              onPressed: onBack,
+                              onPressed: widget.onBack,
                               icon: const Icon(Icons.arrow_back),
                               label: const Text('Back'),
                             ),
                             _NavigationVoiceButton(
-                              stage: travellingToDestination
+                              stage: widget.travellingToDestination
                                   ? 'Approaching destination'
                                   : 'Approaching customer',
                               instruction: route?.nextInstruction,
@@ -2605,13 +2732,19 @@ class _FullScreenDriverRoute extends StatelessWidget {
                             ),
                             IconButton(
                               tooltip: 'Trip safety',
-                              onPressed: () =>
-                                  _safetyDialog(context, backend, ride),
+                              onPressed: () => _safetyDialog(
+                                context,
+                                widget.backend,
+                                widget.ride,
+                              ),
                               icon: const Icon(Icons.shield_outlined),
                             ),
                             TextButton.icon(
-                              onPressed: () =>
-                                  _cancelRideDialog(context, backend, ride),
+                              onPressed: () => _cancelRideDialog(
+                                context,
+                                widget.backend,
+                                widget.ride,
+                              ),
                               icon: const Icon(Icons.cancel_outlined),
                               label: const Text('Cancel'),
                             ),
