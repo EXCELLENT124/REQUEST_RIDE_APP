@@ -270,13 +270,20 @@ class Backend {
         .maybeSingle();
   }
 
-  Future<void> updateDriverLocation(GeoPoint point, {String? rideId}) =>
+  Future<void> updateDriverLocation(
+    GeoPoint point, {
+    String? rideId,
+    double? heading,
+    double? speedMps,
+  }) =>
       client.rpc(
         'update_driver_location',
         params: {
           'p_lat': point.latitude,
           'p_lng': point.longitude,
           'p_ride_id': rideId,
+          'p_heading': heading,
+          'p_speed_mps': speedMps,
         },
       );
 

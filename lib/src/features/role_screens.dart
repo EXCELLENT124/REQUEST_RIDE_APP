@@ -411,8 +411,8 @@ LocationSettings _driverLocationSettings() {
   if (!kIsWeb && defaultTargetPlatform == TargetPlatform.android) {
     return AndroidSettings(
       accuracy: LocationAccuracy.bestForNavigation,
-      distanceFilter: 15,
-      intervalDuration: const Duration(seconds: 10),
+      distanceFilter: 5,
+      intervalDuration: const Duration(seconds: 5),
       foregroundNotificationConfig: const ForegroundNotificationConfig(
         notificationTitle: 'Request Ride driver is online',
         notificationText: 'Sharing your location to receive and complete rides',
@@ -423,7 +423,7 @@ LocationSettings _driverLocationSettings() {
   if (!kIsWeb && defaultTargetPlatform == TargetPlatform.iOS) {
     return AppleSettings(
       accuracy: LocationAccuracy.bestForNavigation,
-      distanceFilter: 15,
+      distanceFilter: 5,
       activityType: ActivityType.automotiveNavigation,
       pauseLocationUpdatesAutomatically: false,
       showBackgroundLocationIndicator: true,
@@ -432,7 +432,7 @@ LocationSettings _driverLocationSettings() {
   }
   return const LocationSettings(
     accuracy: LocationAccuracy.high,
-    distanceFilter: 20,
+    distanceFilter: 5,
   );
 }
 
@@ -1537,6 +1537,7 @@ class _CustomerNavigationScreen extends StatelessWidget {
                   (tracking['latitude'] as num).toDouble(),
                   (tracking['longitude'] as num).toDouble(),
                 );
+          final driverHeading = (tracking?['heading'] as num?)?.toDouble();
           final approachingDestination = ride.status == RideStatus.inProgress;
           final target =
               approachingDestination ? ride.destination : ride.pickup;
@@ -1544,6 +1545,7 @@ class _CustomerNavigationScreen extends StatelessWidget {
             backend: backend,
             ride: ride,
             driver: driver,
+            driverHeading: driverHeading,
             target: target,
             approachingDestination: approachingDestination,
             onBack: onBack,
@@ -1557,6 +1559,7 @@ class _FullScreenCustomerRoute extends StatelessWidget {
     required this.backend,
     required this.ride,
     required this.driver,
+    required this.driverHeading,
     required this.target,
     required this.approachingDestination,
     required this.onBack,
@@ -1565,6 +1568,7 @@ class _FullScreenCustomerRoute extends StatelessWidget {
   final Backend backend;
   final Ride ride;
   final GeoPoint? driver;
+  final double? driverHeading;
   final GeoPoint target;
   final bool approachingDestination;
   final VoidCallback onBack;
@@ -1648,7 +1652,9 @@ class _FullScreenCustomerRoute extends StatelessWidget {
                         height: 58,
                         child: Transform.rotate(
                           angle: approachingDestination
-                              ? _routeBearingRadians(points)
+                              ? (driverHeading == null
+                                  ? _routeBearingRadians(points)
+                                  : driverHeading! * math.pi / 180)
                               : 0,
                           child: DecoratedBox(
                             decoration: BoxDecoration(
@@ -1817,6 +1823,8 @@ class _DriverWorkspaceState extends State<DriverWorkspace> {
   StreamSubscription<List<Ride>>? rideUpdates;
   Timer? locationHeartbeat;
   GeoPoint? lastLocation;
+  double? lastHeading;
+  double? lastSpeedMps;
   String? activeRideId;
   String? minimizedRideId;
   var changingAvailability = false;
@@ -1913,10 +1921,24 @@ class _DriverWorkspaceState extends State<DriverWorkspace> {
         locationSettings: _driverLocationSettings(),
       ).listen((position) {
         final updated = GeoPoint(position.latitude, position.longitude);
-        lastLocation = updated;
+        final heading = position.heading >= 0 ? position.heading : null;
+        final speed = position.speed >= 0 ? position.speed : null;
+        if (mounted) {
+          setState(() {
+            lastLocation = updated;
+            lastHeading = heading;
+            lastSpeedMps = speed;
+          });
+        } else {
+          lastLocation = updated;
+          lastHeading = heading;
+          lastSpeedMps = speed;
+        }
         unawaited(widget.backend.updateDriverLocation(
           updated,
           rideId: activeRideId,
+          heading: heading,
+          speedMps: speed,
         ));
       });
       locationHeartbeat = Timer.periodic(const Duration(seconds: 30), (_) {
@@ -1925,6 +1947,8 @@ class _DriverWorkspaceState extends State<DriverWorkspace> {
           unawaited(widget.backend.updateDriverLocation(
             current,
             rideId: activeRideId,
+            heading: lastHeading,
+            speedMps: lastSpeedMps,
           ));
         }
       });
@@ -2073,6 +2097,8 @@ class _DriverWorkspaceState extends State<DriverWorkspace> {
             return _DriverNavigationScreen(
               backend: widget.backend,
               ride: activeRide,
+              liveDriver: lastLocation,
+              liveHeading: lastHeading,
               onBack: () => setState(() => minimizedRideId = activeRide.id),
             );
           }
@@ -2288,10 +2314,14 @@ class _DriverNavigationScreen extends StatelessWidget {
   const _DriverNavigationScreen({
     required this.backend,
     required this.ride,
+    required this.liveDriver,
+    required this.liveHeading,
     required this.onBack,
   });
   final Backend backend;
   final Ride ride;
+  final GeoPoint? liveDriver;
+  final double? liveHeading;
   final VoidCallback onBack;
 
   RideStatus? get next => switch (ride.status) {
@@ -2307,12 +2337,14 @@ class _DriverNavigationScreen extends StatelessWidget {
         stream: backend.trackRide(ride.id),
         builder: (context, snapshot) {
           final tracking = snapshot.data;
-          final driver = tracking == null
-              ? null
-              : GeoPoint(
-                  (tracking['latitude'] as num).toDouble(),
-                  (tracking['longitude'] as num).toDouble(),
-                );
+          final driver = liveDriver ??
+              (tracking == null
+                  ? null
+                  : GeoPoint(
+                      (tracking['latitude'] as num).toDouble(),
+                      (tracking['longitude'] as num).toDouble(),
+                    ));
+          final trackedHeading = (tracking?['heading'] as num?)?.toDouble();
           final travellingToDestination = ride.status == RideStatus.inProgress;
           final target =
               travellingToDestination ? ride.destination : ride.pickup;
@@ -2320,6 +2352,7 @@ class _DriverNavigationScreen extends StatelessWidget {
             backend: backend,
             ride: ride,
             driver: driver,
+            driverHeading: liveHeading ?? trackedHeading,
             target: target,
             travellingToDestination: travellingToDestination,
             next: next,
@@ -2334,6 +2367,7 @@ class _FullScreenDriverRoute extends StatelessWidget {
     required this.backend,
     required this.ride,
     required this.driver,
+    required this.driverHeading,
     required this.target,
     required this.travellingToDestination,
     required this.next,
@@ -2343,6 +2377,7 @@ class _FullScreenDriverRoute extends StatelessWidget {
   final Backend backend;
   final Ride ride;
   final GeoPoint? driver;
+  final double? driverHeading;
   final GeoPoint target;
   final bool travellingToDestination;
   final RideStatus? next;
@@ -2436,7 +2471,9 @@ class _FullScreenDriverRoute extends StatelessWidget {
                         height: 58,
                         child: Transform.rotate(
                           angle: travellingToDestination
-                              ? _routeBearingRadians(points)
+                              ? (driverHeading == null
+                                  ? _routeBearingRadians(points)
+                                  : driverHeading! * math.pi / 180)
                               : 0,
                           child: DecoratedBox(
                             decoration: BoxDecoration(
