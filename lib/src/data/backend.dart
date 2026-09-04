@@ -61,9 +61,7 @@ class Backend {
     final details = await getProfileDetails();
     final path = details['avatar_path'] as String?;
     if (path == null || path.isEmpty) return null;
-    return client.storage
-        .from('profile-photos')
-        .createSignedUrl(path, 60 * 60);
+    return client.storage.from('profile-photos').createSignedUrl(path, 60 * 60);
   }
 
   Future<String> uploadProfilePhoto(Uint8List bytes, String fileName) async {
@@ -102,9 +100,7 @@ class Backend {
     if (previousPath != null && previousPath != path) {
       await client.storage.from('profile-photos').remove([previousPath]);
     }
-    return client.storage
-        .from('profile-photos')
-        .createSignedUrl(path, 60 * 60);
+    return client.storage.from('profile-photos').createSignedUrl(path, 60 * 60);
   }
 
   Future<void> updateProfile({
@@ -275,8 +271,9 @@ class Backend {
     String? rideId,
     double? heading,
     double? speedMps,
-  }) =>
-      client.rpc(
+  }) async {
+    try {
+      await client.rpc(
         'update_driver_location',
         params: {
           'p_lat': point.latitude,
@@ -286,6 +283,20 @@ class Backend {
           'p_speed_mps': speedMps,
         },
       );
+    } on PostgrestException catch (error) {
+      if (error.code != 'PGRST202') rethrow;
+      // Keep live tracking operational while an older deployed database is
+      // waiting for the heading/speed telemetry migration.
+      await client.rpc(
+        'update_driver_location',
+        params: {
+          'p_lat': point.latitude,
+          'p_lng': point.longitude,
+          'p_ride_id': rideId,
+        },
+      );
+    }
+  }
 
   Future<Map<String, dynamic>?> driverApplication() async {
     final user = currentUser;
